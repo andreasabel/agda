@@ -1,10 +1,6 @@
 -- | Compile Agda to System Fω with data types and constructor.
 
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TypeFamilies #-}
-
-
-module Agda.Compiler.Fomega.Syntax where
+module Agda.Compiler.Fomega.Syntax.Inductive where
 
 
 {- extract to Fomega
@@ -155,119 +151,53 @@ import Agda.Syntax.Abstract.Name
 import qualified Agda.Syntax.Internal as I
 import Agda.Syntax.Literal
 
--- * Kinds
-
 -- | System F omega kinds.
-data KindView' a
+data Kind
   = KBase
     -- ^ Kind of types ⋆.
-  | KArr a a
+  | KArr Kind Kind
     -- ^ Function kind (kind of type constructors) @κ → κ'@.
 
-class Monad m => KindRep m a where
-  kindView :: a -> m (KindView' a)
-  -- ^ View @a@ as kind.
-  kBase :: a
-  -- ^ Construct the base kind.
-  kArr  :: a -> a -> a
-  -- ^ Construct a function kind.
-
--- * Types
-
--- | @a@ is a representation of Fomega types.
-class Monad m => TypeRep m a where
-  type KindRep_ a :: *
-  -- ^ The representation of kinds.
-  typeView :: a -> m (TypeView' (KindRep_ a) a)
-  -- ^ View @a@ as a type.
-  tVar :: TVar -> TyArgs' a -> a
-  -- ^ Construct a neutral application.
-  tCon :: TCon' (KindRep_ a) -> TyArgs' a -> a
-  -- ^ Construct a type constructor application.
-  tLam :: I.Abs a -> a
-  -- ^ Construct a type-level lambda.
-  -- tUnknown :: a -- NEEDED?
-  tErased  :: a
-  -- ^ Construct an erasure marker.
-
-  -- | View @a@ as a function type.
-  funTypeView :: a -> m (FunTypeView' (KindRep_ a) a)
-  funTypeView t = do
-    v <- typeView t
-    case v of
-      TCon TArrow [a,b] -> return $ FTArrow a b
-      TCon (TForall k) [f] -> do
-        v <- typeView f
-        case v of
-          TLam a -> return $ FTForall k a
-          _      -> return $ FTNo
-      _ -> return $ FTNo
-{-
-      TCon TData{} _ -> FTNo
-      TVar{} -> return FTNo
-      TLam{} -> return FTNo
-      TUnknown{} -> return FTNo
-      TErased{}  -> return FTNo
--}
-
--- ** Standard view
-
 -- | System F omega types and type constructors.
-data TypeView' k a
-  = TVar {-# UNPACK #-} !TVar (TyArgs' a)
+data Type
+  = TVar {-# UNPACK #-} !TVar TyArgs
     -- ^ Type (constructor) variables (applied to types).
-  | TCon (TCon' k) (TyArgs' a)
+  | TCon TCon TyArgs
     -- ^ Type constructor.
-  | TLam (I.Abs a)
+  | TLam (I.Abs Type)
     -- ^ Type abstraction @λX.T@.
-  | TUnknown
+  | Unknown
     -- ^ A type coming from Agda that is not representable in System Fω.
-  | TErased
+  | Erased
     -- ^ Type of erased things (proofs etc.)
 
-type TyArgs' a = [a]
+type TyArgs = [Type]
 
 -- | Type variables are represented by de Bruijn indices.
 type TVar = Int
 
 -- | Type constructors
-data TCon' k
+data TCon
   = TArrow
     -- ^ Function space.
-  | TForall k
-    -- ^ Polymorphic type, binding type variable of kind @k@.
+  | TForall
+    -- ^ Polymorphic type.
   | TData QName
     -- ^ User defined data and record types.
 
--- ** Function type view
-
-data FunTypeView' k a
-  = FTArrow a a
-    -- ^ We are a function type @A -> B@.
-  | FTForall k (I.Abs a)
-    -- ^ We are a polymorphic type @∀X:κ.A@.
-  | FTEraseArg a
-    -- ^ We are an irrelevant function type @. -> B@,
-    --   arguments to functions should be erased.
-  | FTNo
-    -- ^ We are not a function type of any sort.
-
-
--- * Expressions
-
 -- | System F expressions.
-data ExprView' a
-  = Var {-# UNPACK #-} !Var (Args' a)
+data Expr
+  = Var {-# UNPACK #-} !Var Args
     -- ^ Variables @x es@.
-  | Lam ArgInfo (I.Abs a)
+  | Lam ArgInfo (I.Abs Expr)
     -- ^ Term abstraction @λx.e@ or type abstraction @ΛX.e@.
   | Lit Literal
     -- ^ Constant numbers, strings, chars etc.
-  | Def QName (Args' a)
+  | Def QName Args
     -- ^ Defined function @f es@.
-  | Con I.ConHead (Args' a)
+  | Con I.ConHead Args
     -- ^ Data constructor @c es@.
-  | Coerce a
+  | Coerce Expr
     -- ^ Type cast (used for expressions that are well-typed in Agda,
     --   but ill-typed in Fω).
 
@@ -290,22 +220,4 @@ data Arg a = Arg
   }
 
 -- | List of arguments.
-type Args' a = [Arg a]
-
-class Monad m => ExprRep m a where
-
-  exprView :: a -> m (ExprView' a)
-  -- ^ View @a@ as expression.
-
-  var :: Var -> Args' a -> a
-  -- ^ Construct a neutral expression.
-  lam :: ArgInfo -> I.Abs a -> a
-  -- ^ Construct a lambda abstraction.
-  lit :: Literal -> a
-  -- ^ Construct a literal expression.
-  def :: QName -> Args' a -> a
-  -- ^ Construct a definition application.
-  con :: I.ConHead -> Args' a -> a
-  -- ^ Construct a constructor application.
-  coerce :: a -> a
-  -- ^ Construct a coerced expression.
+type Args = [Arg Expr]
