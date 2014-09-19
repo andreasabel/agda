@@ -245,24 +245,24 @@ data FunTypeView' k a
 
 -- | System F expressions.
 data ExprView' a
-  = Var {-# UNPACK #-} !Var (Args' a)
+  = FVar {-# UNPACK #-} !Var (Args' a)
     -- ^ Variables @x es@.
-  | Lam ArgInfo (I.Abs a)
+  | FLam ArgInfo (I.Abs a)
     -- ^ Term abstraction @λx.e@ or type abstraction @ΛX.e@.
-  | Lit Literal
+  | FLit Literal
     -- ^ Constant numbers, strings, chars etc.
-  | Def QName (Args' a)
+  | FDef QName (Args' a)
     -- ^ Defined function @f es@.
-  | Con I.ConHead (Args' a)
+  | FCon I.ConHead (Args' a)
     -- ^ Data constructor @c es@.
-  | Coerce a
+  | FCoerce a
     -- ^ Type cast (used for expressions that are well-typed in Agda,
     --   but ill-typed in Fω).
 
 -- | Term variables are de Bruijn indices.
 type Var = Int
 
--- | Classification of arguments in expression application
+-- | Classification of arguments in expression application.
 data ArgInfo
   = TypeArg
     -- ^ Type argument.
