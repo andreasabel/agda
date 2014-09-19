@@ -187,22 +187,22 @@ data TCon
 
 -- | System F expressions.
 data Expr
-  = Var {-# UNPACK #-} !Var Args
+  = FVar {-# UNPACK #-} !FVar Args
     -- ^ Variables @x es@.
-  | Lam ArgInfo (I.Abs Expr)
+  | FLam ArgInfo (I.Abs Expr)
     -- ^ Term abstraction @λx.e@ or type abstraction @ΛX.e@.
-  | Lit Literal
+  | FLit Literal
     -- ^ Constant numbers, strings, chars etc.
-  | Def QName Args
+  | FDef QName Args
     -- ^ Defined function @f es@.
-  | Con I.ConHead Args
+  | FCon I.ConHead Args
     -- ^ Data constructor @c es@.
   | Coerce Expr
     -- ^ Type cast (used for expressions that are well-typed in Agda,
     --   but ill-typed in Fω).
 
 -- | Term variables are de Bruijn indices.
-type Var = Int
+type FVar = Int
 
 -- | Classification of arguments in expression application
 data ArgInfo
