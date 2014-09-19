@@ -8,9 +8,18 @@
 --
 -- Example:
 -- @
---    data Vec (a : Level) (A : Set a) : ℕ → Set a where
---      nil  : Vec a A zero
---      cons : (n : ℕ) → A → Vec a A n → Vec a A (suc n)
+--   data Vec (a : Level) (A : Set a) : ℕ → Set a where
+--     nil  : Vec a A zero
+--     cons : (n : ℕ) → A → Vec a A n → Vec a A (suc n)
+--
+--   data Fin : ℕ → Set where
+--     zero : (n : ℕ) → Fin (suc n)
+--     suc  : (n : ℕ) → Fin n → Fin (suc n)
+--
+--   lookup : (a : Level) (A : Set a) (n : ℕ) (i : Fin n) (v : Vec A n) → A
+--   lookup a A .(suc m) (zero m) (cons .m x xs) = x
+--   lookup a A .(suc m) (suc m i) (cons .m x xs) = lookup a A m i xs
+--
 -- @
 -- represented as
 -- @
@@ -18,24 +27,80 @@
 --   con  nil  : (a : Level) (A : Set a) → Vec a A zero
 --   con  cons : (a : Level) (A : Set a)
 --               (n : ℕ) → A → Vec a A n → Vec a A (suc n)
+--
+--   data Fin  : ℕ → Set
+--   con  zero : (n : ℕ) → Fin (suc n)
+--   con  suc  : (n : ℕ) → Fin n → Fin (suc n)
+--
+--   lookup : (a : Level) (A : Set a) (n : ℕ) (i : Fin n) (v : Vec A n) → A
+--   lookup a A n i v =
+--     case i of
+--       zero m  ->
+--         case v of
+--           cons _ x xs -> x
+--       suc m i ->
+--         case v of
+--           cons _ x xs -> lookup a A m i xs
 -- @
 -- is extracted to
 -- @
 --   data Vec  : () → * → () → *
 --   con  nil  : () → ∀ A:*. Vec () A ()
 --   con  cons : () → ∀ A:*. ℕ → A → Vec () A () → Vec () A ()
+--
+--   data Fin  : () → *
+--   con  zero : ℕ → Fin ()
+--   con  suc  : ℕ → Fin () → Fin ()
+--
+--   lookup : () → ∀ A : *.  ℕ → Fin () → Vec A () → A
+--   lookup a A n i v =
+--     case i of
+--       zero m  ->
+--         case v of
+--           cons _ _ _ x xs -> x
+--       suc m i ->
+--         case v of
+--           cons _ _ _ x xs -> lookup a A m i xs
 -- @
 -- Uninteresting arguments are discarded:
 -- @
 --   data Vec  : * → *
 --   con  nil  : ∀ A:*. Vec A
 --   con  cons : ∀ A:*. ℕ → A → Vec A → Vec A
+--
+--   data Fin  : *
+--   con  zero : ℕ → Fin
+--   con  suc  : ℕ → Fin → Fin
+--
+--   lookup : ∀ A : *.  ℕ → Fin → Vec A → A
+--   lookup A n i v =
+--     case i of
+--       zero m  ->
+--         case v of
+--           cons _ _ x xs -> x
+--       suc m i ->
+--         case v of
+--           cons _ _ x xs -> lookup A m i xs
 -- @
--- which should be translated back to Haskell as
+-- which should be translated to Haskell as
 -- @
---    data Vec a
---      = Nil
---      | Cons ℕ a (Vec a)
+--   data Vec a
+--     = Nil
+--     | Cons ℕ a (Vec a)
+--
+--   data Fin
+--     = Zero ℕ
+--     | Suc ℕ Fin
+--
+--  lookup : forall a. ℕ → Fin → Vec a → a
+--  lookup n i v =
+--    case i of
+--      Zero m ->
+--        case v of
+--          Cons _ x xs -> x
+--      Suc m i ->
+--        case v of
+--          Cons _ x xs -> lookup m i v
 -- @
 
 module Agda.Compiler.Fomega.Extract where
@@ -89,6 +154,7 @@ type Extract = TCM
 --     @Set → ℕ → Set@ is extracted as @⋆ → () → ⋆@
 --
 class ExtractKind a where
+
   -- | Extract a kind from something.
   --   Can fail if that something does not correspond to an Fomega kind.
   extractKind  :: a -> Extract (Maybe Kind)
@@ -97,12 +163,17 @@ class ExtractKind a where
   extractKind' :: a -> MaybeT Extract Kind
   extractKind' a = MaybeT $ extractKind a
 
+  -- | Extract an extended kind.
+  --   Returns @kTerm@ if extracted kind is not proper.
+  extractKindDom :: a -> Extract Kind
+  extractKindDom a = fromMaybe kTerm <$> extractKind a
+
 instance ExtractKind Term where
   extractKind' v = do
     v <- reduce v
     case ignoreSharing v of
-      Sort{}   -> pure $ kBase
-      Pi dom b -> kArr <$> extractKind' dom
+      Sort{}   -> pure $ kType
+      Pi dom b -> kArr <$> lift (extractKindDom dom)
                        <*> extractKind' (absApp b dummy)
       _        -> mzero
     where
@@ -144,7 +215,8 @@ instance ExtractType Term where
         caseMaybeM (isDataOrRecord d) (return tUnknown) $ \ _ -> do
         -- @d@ is data or record constructor:
         t <- defType <$> getConstInfo
-        tCon d <$> extractTypeElims t es
+        let args = fromMaybe __IMPOSSIBLE__ $ allApplyElims es
+        tCon d <$> do extractTypeArgs t args
       -- Function types and polymorphic types
       Pi dom b -> do
         mk <- extractKind dom
