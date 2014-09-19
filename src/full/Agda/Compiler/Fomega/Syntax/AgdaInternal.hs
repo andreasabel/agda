@@ -45,7 +45,7 @@ instance KindRep TCM Kind where
   kindView t = do
     t <- reduce t
     case ignoreSharing t of
-      I.Pi dom b   -> return $ KArr (unEl $ unDom dom) (unEl $ absBody b)
+      I.Pi dom b   -> return $ KArrow (unEl $ unDom dom) (unEl $ absBody b)
       -- The following are not types:
       I.Lam{}      -> __IMPOSSIBLE__
       I.ExtLam{}   -> __IMPOSSIBLE__
@@ -59,21 +59,21 @@ instance KindRep TCM Kind where
       -- We do not compile files with open metas.
       I.MetaV{}    -> __IMPOSSIBLE__
       -- Universes are collapsed into base kind *.
-      I.Sort{}     -> return $ KBase
+      I.Sort{}     -> return $ KType
       -- Neutral kinds are interpreted as base kind *.
-      I.Var{}      -> return $ KBase
-      I.Def{}      -> return $ KBase
+      I.Var{}      -> return $ KType
+      I.Def{}      -> return $ KType
 
 #if __GLASGOW_HASKELL__ >= 706
-  kBase :: Kind
+  kType :: Kind
 #endif
-  kBase     = Sort $ mkType 0
+  kType     = Sort $ mkType 0
   -- Note: we do not care about the sort here.
 
 #if __GLASGOW_HASKELL__ >= 706
-  kArr :: Kind -> Kind -> Kind
+  kArrow :: Kind -> Kind -> Kind
 #endif
-  kArr k k' = Pi (defaultDom $ El Inf k) (NoAbs "_" $ El Inf k')
+  kArrow k k' = Pi (defaultDom $ El Inf k) (NoAbs "_" $ El Inf k')
 
 
 -- * Implementation of types.

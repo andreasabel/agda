@@ -160,9 +160,11 @@ import qualified Agda.Compiler.Fomega.Syntax as F
 
 -- | System F omega kinds.
 data Kind
-  = KBase
+  = KType
     -- ^ Kind of types ⋆.
-  | KArr Kind Kind
+  | KTerm
+    -- ^ Kind of terms @()@.
+  | KArrow Kind Kind
     -- ^ Function kind (kind of type constructors) @κ → κ'@.
 
 -- | System F omega types and type constructors.
@@ -217,11 +219,13 @@ type KindView = F.KindView' Kind
 instance Monad m => KindRep m Kind where
 
   -- kindView :: Monad m => Kind -> m KindView
-  kindView KBase       = return $ F.KBase
-  kindView (KArr k k') = return $ F.KArr k k'
+  kindView KType       = return $ F.KType
+  kindView KTerm       = return $ F.KTerm
+  kindView (KArrow k k') = return $ F.KArrow k k'
 
-  kBase = KBase
-  kArr  = KArr
+  kType  = KType
+  kTerm  = KTerm
+  kArrow = KArrow
 
 
 -- * Instantiating the abstract interface for types.

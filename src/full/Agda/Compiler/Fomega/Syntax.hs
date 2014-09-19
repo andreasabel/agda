@@ -158,18 +158,25 @@ import Agda.Syntax.Literal
 -- * Kinds
 
 -- | System F omega kinds.
+--   Proper kinds are of the form @κ₁ → ... → κₗ → ⋆@
+--   where the @κᵢ@ can be arbitrary kinds (including @KTerm@).
 data KindView' a
-  = KBase
+  = KType
     -- ^ Kind of types ⋆.
-  | KArr a a
+  | KTerm
+    -- ^ Kind of terms @()@.
+    --   May only appear as @() → κ@ in proper kinds.
+  | KArrow a a
     -- ^ Function kind (kind of type constructors) @κ → κ'@.
 
 class Monad m => KindRep m a where
   kindView :: a -> m (KindView' a)
   -- ^ View @a@ as kind.
-  kBase :: a
-  -- ^ Construct the base kind.
-  kArr  :: a -> a -> a
+  kType    :: a
+  -- ^ Construct the kind @*@ of types.
+  kTerm    :: a
+  -- ^ Construct the kind @()@ of terms.
+  kArrow   :: a -> a -> a
   -- ^ Construct a function kind.
 
 -- * Types
