@@ -8,21 +8,22 @@
 --
 -- Example:
 -- @
---    data Vec (A : Set) : ℕ → Set where
---      nil  : Vec A zero
---      cons : (n : ℕ) → A → Vec A n → Vec A (suc n)
+--    data Vec (a : Level) (A : Set a) : ℕ → Set a where
+--      nil  : Vec a A zero
+--      cons : (n : ℕ) → A → Vec a A n → Vec a A (suc n)
 -- @
 -- represented as
 -- @
---   data Vec  : Set → ℕ → Set
---   con  nil  : (A : Set) → Vec A zero
---   con  cons : (A : Set) (n : ℕ) → A → Vec A n → Vec A (suc n)
+--   data Vec  : (a : Level) → Set a → ℕ → Set a
+--   con  nil  : (a : Level) (A : Set a) → Vec a A zero
+--   con  cons : (a : Level) (A : Set a)
+--               (n : ℕ) → A → Vec a A n → Vec a A (suc n)
 -- @
 -- is extracted to
 -- @
---   data Vec  : * → () → *
---   con  nil  : ∀ A:*. Vec A ()
---   con  cons : ∀ A:*. ℕ → A → Vec A () → Vec A ()
+--   data Vec  : () → * → () → *
+--   con  nil  : () → ∀ A:*. Vec () A ()
+--   con  cons : () → ∀ A:*. ℕ → A → Vec () A () → Vec () A ()
 -- @
 -- Uninteresting arguments are discarded:
 -- @
@@ -34,7 +35,7 @@
 -- @
 --    data Vec a
 --      = Nil
---      | Cons ℕ A (Vec A)
+--      | Cons ℕ a (Vec a)
 -- @
 
 module Agda.Compiler.Fomega.Extract where
