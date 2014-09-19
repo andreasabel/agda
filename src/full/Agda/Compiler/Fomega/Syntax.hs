@@ -182,7 +182,11 @@ class Monad m => TypeRep m a where
   -- ^ View @a@ as a type.
   tVar :: TVar -> TyArgs' a -> a
   -- ^ Construct a neutral application.
-  tCon :: TCon' (KindRep_ a) -> TyArgs' a -> a
+  tArrow :: a -> a -> a
+  -- ^ Construct a function type.
+  tForall :: KindRep_ a -> I.Abs a -> a
+  -- ^ Construct a polymorphic type.
+  tCon :: QName -> TyArgs' a -> a
   -- ^ Construct a type constructor application.
   tLam :: I.Abs a -> a
   -- ^ Construct a type-level lambda.
@@ -195,20 +199,9 @@ class Monad m => TypeRep m a where
   funTypeView t = do
     v <- typeView t
     case v of
-      TCon TArrow [a,b] -> return $ FTArrow a b
-      TCon (TForall k) [f] -> do
-        v <- typeView f
-        case v of
-          TLam a -> return $ FTForall k a
-          _      -> return $ FTNo
+      TArrow a b  -> return $ FTArrow a b
+      TForall k f -> return $ FTForall k f
       _ -> return $ FTNo
-{-
-      TCon TData{} _ -> FTNo
-      TVar{} -> return FTNo
-      TLam{} -> return FTNo
-      TUnknown{} -> return FTNo
-      TErased{}  -> return FTNo
--}
 
 -- ** Standard view
 
@@ -216,8 +209,12 @@ class Monad m => TypeRep m a where
 data TypeView' k a
   = TVar {-# UNPACK #-} !TVar (TyArgs' a)
     -- ^ Type (constructor) variables (applied to types).
-  | TCon (TCon' k) (TyArgs' a)
-    -- ^ Type constructor.
+  | TArrow a a
+    -- ^ Function type @T → U@.
+  | TForall k (I.Abs a)
+    -- ^ Polymorphic type @∀ X:κ. T@.
+  | TCon QName (TyArgs' a)
+    -- ^ User defined data/record type constructor.
   | TLam (I.Abs a)
     -- ^ Type abstraction @λX.T@.
   | TUnknown
@@ -229,15 +226,6 @@ type TyArgs' a = [a]
 
 -- | Type variables are represented by de Bruijn indices.
 type TVar = Int
-
--- | Type constructors
-data TCon' k
-  = TArrow
-    -- ^ Function space.
-  | TForall k
-    -- ^ Polymorphic type, binding type variable of kind @k@.
-  | TData QName
-    -- ^ User defined data and record types.
 
 -- ** Function type view
 
