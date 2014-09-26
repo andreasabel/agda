@@ -17,22 +17,6 @@ import Agda.Utils.Pretty
 
 -- | Note: function space in domain @(k1 -> k2) -> k3@
 --   vs. function space in range @k1 -> k2 -> k3@.
-instance Pretty a => Pretty (KindView' a) where
-  prettyPrec n k =
-    case k of
-      KType        -> text "*"
-      KTerm        -> text "()"
-      KArrow k1 k2 -> mparens inDom $ d1 <+> text "->" <+> d2
-        where
-          d1      = prettyPrec domPrec k1
-          d2      = prettyPrec rngPrec k2
-          domPrec = 1
-          rngPrec = 0
-
-          inDom   = n >= domPrec
-
--- | Note: function space in domain @(k1 -> k2) -> k3@
---   vs. function space in range @k1 -> k2 -> k3@.
 instance (Functor m, Applicative m, MonadPretty m a) => MonadPretty m (KindView' a) where
   prettyPrecM n k =
     case k of
