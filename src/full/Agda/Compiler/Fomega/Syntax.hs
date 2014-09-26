@@ -1,5 +1,9 @@
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE DeriveFoldable             #-}
+{-# LANGUAGE DeriveTraversable          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 -- | Compile Agda to System Fω with data types and constructor.
 --
@@ -7,6 +11,9 @@
 --   views and construction functions.
 
 module Agda.Compiler.Fomega.Syntax where
+
+import Data.Foldable    (Foldable)
+import Data.Traversable (Traversable)
 
 import Agda.Syntax.Abstract.Name
 import qualified Agda.Syntax.Internal as I
@@ -42,7 +49,7 @@ class Monad m => KindRep m a where
 
 -- | System F omega types and type constructors.
 data TypeView' k a
-  = TVar {-# UNPACK #-} !TVar (TyArgs' a)
+  = TVar {-# UNPACK #-} !TyVar (TyArgs' a)
     -- ^ Type (constructor) variables (applied to types).
   | TArrow a a
     -- ^ Function type @T → U@.
@@ -57,10 +64,11 @@ data TypeView' k a
   | TErased
     -- ^ Type of erased things (proofs etc.)
 
-type TyArgs' a = [a]
-
 -- | Type variables are represented by de Bruijn indices.
-type TVar = Int
+newtype TyVar = TyVar { theTyVar :: Int }
+
+newtype TyArgs' a = TyArgs { theTyArgs :: [a] }
+  deriving (Functor, Foldable, Traversable)
 
 -- ** Class interface
 
@@ -72,7 +80,7 @@ class Monad m => TypeRep m a where
   -- ^ The representation of kinds.
   typeView :: a -> m (TypeView' (KindRep_ a) a)
   -- ^ View @a@ as a type.
-  tVar :: TVar -> TyArgs' a -> a
+  tVar :: TyVar -> TyArgs' a -> a
   -- ^ Construct a neutral application.
   tArrow :: a -> a -> a
   -- ^ Construct a function type.
@@ -128,7 +136,7 @@ data ExprView' a
     --   but ill-typed in Fω).
 
 -- | Term variables are de Bruijn indices.
-type Var = Int
+newtype Var = Var { theVar :: Int }
 
 -- | Classification of arguments in expression application.
 data ArgInfo
@@ -143,10 +151,11 @@ data Arg a = Arg
     -- ^ Argument decoration.
   , arg     :: a
     -- ^ The argument.
-  }
+  } deriving (Functor, Foldable, Traversable)
 
 -- | List of arguments.
-type Args' a = [Arg a]
+newtype Args' a = Args { theArgs :: [Arg a] }
+  deriving (Functor, Foldable, Traversable)
 
 -- ** Class interface
 

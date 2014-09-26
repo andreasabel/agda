@@ -96,20 +96,20 @@ instance Monad m => TypeRep m Type where
   -- typeView :: Monad m => Type -> m TypeView
   typeView t =
     case t of
-      TVar i ts   -> return $ F.TVar i ts
+      TVar i ts   -> return $ F.TVar (F.TyVar i) (F.TyArgs ts)
       TArrow t u  -> return $ F.TArrow t u
       TForall k t -> return $ F.TForall k t
-      TCon d ts   -> return $ F.TCon d ts
+      TCon d ts   -> return $ F.TCon d (F.TyArgs ts)
       TLam t      -> return $ F.TLam t
       TUnknown    -> return $ F.TUnknown
       TErased     -> return $ F.TErased
 
-  tVar    = TVar
-  tArrow  = TArrow
-  tForall = TForall
-  tCon    = TCon
-  tLam    = TLam
-  tErased = TErased
+  tVar x ts = TVar (F.theTyVar x) (F.theTyArgs ts)
+  tArrow    = TArrow
+  tForall   = TForall
+  tCon d ts = TCon d (F.theTyArgs ts)
+  tLam      = TLam
+  tErased   = TErased
 
 
 -- * Instantiating the abstract interface for expressions.
@@ -121,16 +121,16 @@ instance Monad m => ExprRep m Expr where
   -- exprView :: Expr -> m ExprView
   exprView e =
     case e of
-      FVar i es -> return $ F.FVar i es
+      FVar i es -> return $ F.FVar (F.Var i) (F.Args es)
       FLam ai f -> return $ F.FLam ai f
       FLit l    -> return $ F.FLit l
-      FDef d es -> return $ F.FDef d es
-      FCon c es -> return $ F.FCon c es
+      FDef d es -> return $ F.FDef d (F.Args es)
+      FCon c es -> return $ F.FCon c (F.Args es)
       FCoerce e -> return $ F.FCoerce e
 
-  fVar    = FVar
-  fLam    = FLam
-  fLit    = FLit
-  fDef    = FDef
-  fCon    = FCon
-  fCoerce = FCoerce
+  fVar x es = FVar (F.theVar x) (F.theArgs es)
+  fLam      = FLam
+  fLit      = FLit
+  fDef d es = FDef d (F.theArgs es)
+  fCon c es = FCon c (F.theArgs es)
+  fCoerce   = FCoerce

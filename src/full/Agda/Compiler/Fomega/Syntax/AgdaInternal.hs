@@ -103,9 +103,9 @@ instance TypeRep TCM Type where
       -- TLam is represented by Lam
       I.Lam _ t    -> return $ TLam t
       -- TVar is represented by Var, not using projection eliminations
-      I.Var i es   -> return $ TVar i $ map unArg $ fromMaybe __IMPOSSIBLE__ $ allApplyElims es
+      I.Var i es   -> return $ TVar (TyVar i) $ TyArgs $ map unArg $ fromMaybe __IMPOSSIBLE__ $ allApplyElims es
       -- TCon is represented by Def, not using projection eliminations
-      I.Def d es   -> return $ TCon d $ map unArg $ fromMaybe __IMPOSSIBLE__ $ allApplyElims es
+      I.Def d es   -> return $ TCon d $ TyArgs $ map unArg $ fromMaybe __IMPOSSIBLE__ $ allApplyElims es
       -- TErased is represented by Set
       I.Sort{}     -> return $ TErased
       -- TUnknown is represented as a string literate
@@ -121,9 +121,9 @@ instance TypeRep TCM Type where
 #if __GLASGOW_HASKELL__ >= 709
   tVar :: TVar -> TyArgs -> Type
 #endif
-  tVar i ts = I.Var i $ map (Apply . defaultArg) ts
+  tVar i ts = I.Var (theTyVar i) $ map (Apply . defaultArg) $ theTyArgs ts
 
-  tCon q ts = I.Def q $ map (Apply . defaultArg) ts
+  tCon q ts = I.Def q $ map (Apply . defaultArg) $ theTyArgs ts
   tArrow t t' = I.Pi (defaultDom $ El Inf t) (NoAbs "_" $ El Inf t')
   tForall k t = I.Pi (defaultDom $ El Inf k) (El Inf <$> t)
 
