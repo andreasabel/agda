@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP                  #-}
 {-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
 {-| Pretty printing functions.
@@ -60,15 +61,29 @@ instance Pretty String where
 
 -- * Monadic pretty-printing
 
-class Monad m => MonadPretty m a where
-  prettyM     :: a -> m Doc
-  prettyPrecM :: Int -> a -> m Doc
+-- | Abstract type of precedences.
 
-  prettyM     = prettyPrecM 0
+class TopPrecedence p where
+  topPrecedence :: p
+  -- ^ Top context precedence (usually lowest).
+
+instance TopPrecedence () where
+  topPrecedence = ()
+
+instance TopPrecedence Int where
+  topPrecedence = 0
+
+-- | Abstract interface for monadic printing.
+
+class (Monad m, TopPrecedence p) => MonadPretty p m a | a -> p where
+  prettyM     :: a -> m Doc
+  prettyPrecM :: p -> a -> m Doc
+
+  prettyM     = prettyPrecM topPrecedence
   prettyPrecM = const prettyM
 
-instance Monad m => MonadPretty m Doc where
-  prettyM = return
+-- instance (Monad m, TopPrecedence p) => MonadPretty p m Doc where
+--   prettyM = return
 
 -- * 'Doc' utilities
 
