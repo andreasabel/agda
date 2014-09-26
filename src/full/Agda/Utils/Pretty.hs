@@ -58,6 +58,18 @@ instance Pretty Doc where
 instance Pretty String where
   pretty = text
 
+-- * Monadic pretty-printing
+
+class Monad m => MonadPretty m a where
+  prettyM     :: a -> m Doc
+  prettyPrecM :: Int -> a -> m Doc
+
+  prettyM     = prettyPrecM 0
+  prettyPrecM = const prettyM
+
+instance Monad m => MonadPretty m Doc where
+  prettyM = return
+
 -- * 'Doc' utilities
 
 #if !MIN_VERSION_pretty(1,1,2)
