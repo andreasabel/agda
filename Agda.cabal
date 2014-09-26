@@ -165,8 +165,9 @@ library
                     Agda.Compiler.Epic.Smashing
                     Agda.Compiler.Epic.Static
                     Agda.Compiler.Fomega.Syntax
-                    Agda.Compiler.Fomega.Syntax.Inductive
                     Agda.Compiler.Fomega.Syntax.AgdaInternal
+                    Agda.Compiler.Fomega.Syntax.Inductive
+                    Agda.Compiler.Fomega.Syntax.Pretty
                     Agda.Compiler.JS.Case
                     Agda.Compiler.JS.Compiler
                     Agda.Compiler.JS.Syntax
