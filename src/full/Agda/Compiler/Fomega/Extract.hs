@@ -25,7 +25,7 @@
 -- @
 --   data Vec  : (a : Level) → Set a → ℕ → Set a
 --   con  nil  : (a : Level) (A : Set a) → Vec a A zero
---   con  cons : (a : Level) (A : Set a)
+--   con  cons : (a : Level) (A : Set a) →
 --               (n : ℕ) → A → Vec a A n → Vec a A (suc n)
 --
 --   data Fin  : ℕ → Set

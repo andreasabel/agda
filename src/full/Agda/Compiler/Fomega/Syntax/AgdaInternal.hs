@@ -1,5 +1,3 @@
--- | Use 'Agda.Syntax.Internal' as representation of Fomega types.
-
 {-# LANGUAGE CPP                   #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -9,6 +7,8 @@
 #if __GLASGOW_HASKELL__ >= 709
 {-# LANGUAGE InstanceSigs          #-} -- too new, ghc >= 7.6
 #endif
+
+-- | Use 'Agda.Syntax.Internal' as representation of Fomega types.
 
 module Agda.Compiler.Fomega.Syntax.AgdaInternal where
 
@@ -45,29 +45,27 @@ instance KindRep TCM Kind where
   kindView t = do
     t <- reduce t
     case ignoreSharing t of
+      -- KArrow is represented by I.Pi
       I.Pi dom b   -> return $ KArrow (unEl $ unDom dom) (unEl $ absBody b)
-      -- The following are not types:
+      -- KTerm is represented by I.Level (slight abuse)
+      I.Level{}    -> return $ KTerm
+      -- KType is represented by sort Set
+      I.Sort{}     -> return $ KType
+      -- The rest of Agda syntax is not used to represent kinds:
+      I.Var{}      -> __IMPOSSIBLE__
+      I.Def{}      -> __IMPOSSIBLE__
+      I.Con{}      -> __IMPOSSIBLE__
       I.Lam{}      -> __IMPOSSIBLE__
       I.ExtLam{}   -> __IMPOSSIBLE__
       I.Lit{}      -> __IMPOSSIBLE__
-      I.Con{}      -> __IMPOSSIBLE__
-      I.Level{}    -> return $ KTerm
-      -- The following is excluded by ignoreSharing.
-      I.Shared{}   -> __IMPOSSIBLE__
-      -- We cannot have an irrelevance marker in a type.
-      I.DontCare{} -> __IMPOSSIBLE__
-      -- We do not compile files with open metas.
       I.MetaV{}    -> __IMPOSSIBLE__
-      -- Universes are collapsed into base kind *.
-      I.Sort{}     -> return $ KType
-      -- Neutral kinds are interpreted as base kind *.
-      I.Var{}      -> return $ KType
-      I.Def{}      -> return $ KType
+      I.DontCare{} -> __IMPOSSIBLE__
+      I.Shared{}   -> __IMPOSSIBLE__
 
 #if __GLASGOW_HASKELL__ >= 709
   kType :: Kind
 #endif
-  kType     = Sort $ mkType 0
+  kType = Sort $ mkType 0
   -- Note: we do not care about the sort here.
 
   -- | We abuse Level to represent KTerm.
@@ -97,25 +95,28 @@ instance TypeRep TCM Type where
   typeView t = do
     t <- reduce t
     case ignoreSharing t of
+      -- Dependent function types are used to represent TForall,
+      -- nondependent ones represent TArrow.
       I.Pi dom b   -> case b of
-        NoAbs _ b  -> return $ TArrow (unEl $ unDom dom) (unEl b)
         Abs{}      -> return $ TForall (unEl $ unDom dom) (unEl <$> b)
+        NoAbs _ b  -> return $ TArrow (unEl $ unDom dom) (unEl b)
+      -- TLam is represented by Lam
       I.Lam _ t    -> return $ TLam t
-      -- The following are not types:
-      I.ExtLam{}   -> __IMPOSSIBLE__
-      I.Lit{}      -> __IMPOSSIBLE__
-      I.Con{}      -> __IMPOSSIBLE__
-      I.Level{}    -> __IMPOSSIBLE__
-      -- The following is excluded by ignoreSharing.
-      I.Shared{}   -> __IMPOSSIBLE__
-      -- We cannot have an irrelevance marker in a type.
-      I.DontCare{} -> __IMPOSSIBLE__
-      -- We do not compile files with open metas.
-      I.MetaV{}    -> __IMPOSSIBLE__
-      -- Universes are collapsed into base kind *.
-      I.Sort{}     -> return $ TErased
+      -- TVar is represented by Var, not using projection eliminations
       I.Var i es   -> return $ TVar i $ map unArg $ fromMaybe __IMPOSSIBLE__ $ allApplyElims es
+      -- TCon is represented by Def, not using projection eliminations
       I.Def d es   -> return $ TCon d $ map unArg $ fromMaybe __IMPOSSIBLE__ $ allApplyElims es
+      -- TErased is represented by Set
+      I.Sort{}     -> return $ TErased
+      -- TUnknown is represented as a string literate
+      I.Lit{}      -> return $ TUnknown
+      -- The rest of Agda syntax is not used:
+      I.Con{}      -> __IMPOSSIBLE__
+      I.ExtLam{}   -> __IMPOSSIBLE__
+      I.Level{}    -> __IMPOSSIBLE__
+      I.MetaV{}    -> __IMPOSSIBLE__
+      I.DontCare{} -> __IMPOSSIBLE__
+      I.Shared{}   -> __IMPOSSIBLE__
 
 #if __GLASGOW_HASKELL__ >= 709
   tVar :: TVar -> TyArgs -> Type
