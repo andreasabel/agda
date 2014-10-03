@@ -1,8 +1,9 @@
 -- {-# OPTIONS_GHC -fdefer-type-errors #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverlappingInstances  #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE OverlappingInstances      #-}
+{-# LANGUAGE UndecidableInstances      #-}
 
 -- | Pretty printer for Fω syntax
 
@@ -30,18 +31,28 @@ dErased  = text "()"
 -- | Abstract specification of precedences.
 
 class TopPrecedence p => Precedence p where
-  goFunction     :: p -> p
-  goArgument     :: p -> p
-  goLambdaBody   :: p -> p
-  goArrowDomain  :: p -> p
-  goArrowRange   :: p -> p
-  goForallDomain :: p -> p
-  goForallBody   :: p -> p
+  precFunction     :: p -> p
+  precArgument     :: p -> p
+  precLambdaBody   :: p -> p
+  precArrowDomain  :: p -> p
+  precArrowRange   :: p -> p
+  precForallDomain :: p -> p
+  precForallBody   :: p -> p
 
   appBrackets    :: p -> Bool
   lamBrackets    :: p -> Bool
   arrowBrackets  :: p -> Bool
   forallBrackets :: p -> Bool
+
+-- | Changing precedences in 'MonadPrec' sub computation.
+
+goFunction     = localPrec precFunction
+goArgument     = localPrec precArgument
+goLambdaBody   = localPrec precLambdaBody
+goArrowDomain  = localPrec precArrowDomain
+goArrowRange   = localPrec precArrowRange
+goForallDomain = localPrec precForallDomain
+goForallBody   = localPrec precForallBody
 
 -- | Precendences for printing System Fω syntax.
 --
@@ -71,13 +82,13 @@ instance TopPrecedence FPrec where
 
 instance Precedence FPrec where
 
-  goFunction     _ = FunctionPrec
-  goArgument     p = ArgumentPrec   $ rightmost p
-  goLambdaBody   _ = TopPrec
-  goArrowDomain  _ = ArrowDomainPrec
-  goArrowRange   p = ArrowRangePrec $ rightmost p
-  goForallDomain _ = TopPrec
-  goForallBody   _ = TopPrec
+  precFunction     _ = FunctionPrec
+  precArgument     p = ArgumentPrec   $ rightmost p
+  precLambdaBody   _ = TopPrec
+  precArrowDomain  _ = ArrowDomainPrec
+  precArrowRange   p = ArrowRangePrec $ rightmost p
+  precForallDomain _ = TopPrec
+  precForallBody   _ = TopPrec
 
   appBrackets (ArgumentPrec _) = True
   appBrackets _                = False
@@ -100,9 +111,9 @@ instance (Functor m, Applicative m, Monad m, Precedence p, PrettyM p m a) => Pre
       KTerm        -> pure $ dTerm
       KArrow k1 k2 -> parensIf arrowBrackets $ do
          fsep <$> sequence
-           [ localPrec goArrowDomain (prettyPrecM k1)
+           [ localPrec precArrowDomain (prettyPrecM k1)
            , pure $ dArrow
-           , localPrec goArrowRange  (prettyPrecM k2)
+           , localPrec precArrowRange  (prettyPrecM k2)
            ]
 
 -- Why does GHC-7.8.3 insist on an "Applicative m" constraint here?!
