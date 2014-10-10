@@ -1,0 +1,13 @@
+# Rebase current branch onto master
+# Usually, we should be on the Fomega branch when invoking this
+
+git fetch agda-master master:master
+git rebase master
+
+# For each conflict
+# * resove conflict in files in editor
+# * stage files (git add)
+# * git rebase --continue
+# No final commit necessary
+
+# EOF
