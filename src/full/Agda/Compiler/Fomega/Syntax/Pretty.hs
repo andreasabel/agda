@@ -39,10 +39,10 @@ class TopPrecedence p => Precedence p where
   precForallDomain :: p -> p
   precForallBody   :: p -> p
 
-  appBrackets    :: p -> Bool
-  lamBrackets    :: p -> Bool
-  arrowBrackets  :: p -> Bool
-  forallBrackets :: p -> Bool
+  appBrackets      :: p -> Bool
+  lamBrackets      :: p -> Bool
+  arrowBrackets    :: p -> Bool
+  forallBrackets   :: p -> Bool
 
 -- | Changing precedences in 'MonadPrec' sub computation.
 
@@ -110,32 +110,33 @@ instance (Functor m, Applicative m, Monad m, Precedence p, PrettyM p m a) => Pre
       KType        -> pure $ dType
       KTerm        -> pure $ dTerm
       KArrow k1 k2 -> parensIf arrowBrackets $ do
-         fsep <$> sequence
-           [ localPrec precArrowDomain (prettyPrecM k1)
-           , pure $ dArrow
-           , localPrec precArrowRange  (prettyPrecM k2)
-           ]
+        fsep <$> sequence
+          [ goArrowDomain $ prettyPrecM k1
+          , pure $ dArrow
+          , goArrowRange  $ prettyPrecM k2
+          ]
 
 -- Why does GHC-7.8.3 insist on an "Applicative m" constraint here?!
 instance (Applicative m, Precedence p, MonadPrec p m, KindRep m a) => PrettyM p m a where
   prettyPrecM a = prettyPrecM =<< kindView a
 
-{-
 -- * Types
 
-instance MonadPretty m TyVar where
+instance PrettyM p m TyVar where
 
-instance (MonadPretty m k, MonadPretty m a) => MonadPretty m (TypeView' k a) where
+instance (PrettyM p m k, PrettyM p m a) => PrettyM p m (TypeView' k a) where
   prettyPrecM n a = do
     t <- typeView a
     case t of
       TUnknown   -> return $ dUnknown
       TErased    -> return $ dErased
-      TArrow a b -> arrParens . fsep <$> sequence
-        [ prettyPrecM domPrec a
-        , return $ dArrow
-        , prettyPrecM rngPrec b
-        ]
+      TArrow a b -> parensIf arrowBrackets $ do
+        fsep <$> sequence
+          [ goArrowDomain $ prettyPrecM a
+          , pure $ dArrow
+          , goArrowRange  $ prettyPrecM b
+          ]
+
       TCon c as  -> appParens . fsep . (pretty c :) <$> mapM (prettyPrecM argPrec) as
       TVar i as  -> appParens . fsep <$> do
         sequence $ prettyM i : map (prettyPrecM argPrec) as
@@ -149,6 +150,6 @@ instance (MonadPretty m k, MonadPretty m a) => MonadPretty m (TypeView' k a) whe
       arrParens = mparens $ n >= _
       lamParens = mparens $ n >= _
 
--- instance (MonadPretty k, PrettyTCM a) => PrettyTCM (TypeView' k a) where
+-- instance (PrettyM p k, PrettyTCM a) => PrettyTCM (TypeView' k a) where
 --   prettyTCM
 -- -}
