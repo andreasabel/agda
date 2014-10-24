@@ -82,7 +82,11 @@ levelToIndex c (DBLevel l) = DBIndex $ ctxLength c - l - 1
 
 -- * Instances
 
--- | Requires @UndecidableInstances@ due to a weakness of
+-- | Use the cached size as 'ctxLength' to speed up
+--   every operation relying on 'ctxLength',
+--   reducing complexity from linear to constant or logarithmic.
+--
+--   Note: Requires @UndecidableInstances@ due to a weakness of
 --   @FunctionalDependencies@.
 --   One would expect that if @c@ determines @n@ and @a@,
 --   so does @SizedThing c@ (which is actually @(Int,c)@).
@@ -98,11 +102,13 @@ instance (Context c n a) => Context (SizedThing c) n a where
   ctxLength    = theSize
   ctxExtend na c = SizedThing (theSize c + 1) $ ctxSizedExtend na c
 
+
 -- | Context as association list from names to something.
 --
---   Lookup and length: O(n).
+--   Lookup     : O(n).
+--   Length     : O(n).
 --   Extension  : O(1).
---   Name lookup: O(n)
+--   Name lookup: O(n).
 
 instance Context [(n,a)] n a where
   lookupIndex = (!!!) where
@@ -118,31 +124,20 @@ instance Context [(n,a)] n a where
   ctxExtend = (:)
 
 -- | List with precomputed length.
+--
+--   Context operations:
+--   Lookup     : O(n).
+--   Length     : O(1).
+--   Extend     : O(1).
+--   Name lookup: O(n).
+
 type SizedList a = SizedThing [a]
 
--- -- | List with precomputed length.
--- --
--- --   Invariant: @slSize == length . slList@
--- data SizedList a = SizedList { slSize :: !Int, slList :: [a] }
---
--- -- | Context as sized list.
--- --
--- --   Lookup     : O(n).
--- --   Length     : O(1).
--- --   Extension  : O(1).
--- --   Name lookup: O(n)
---
--- instance Context (SizedList (n,a)) n a where
---   lookupIndex                    = lookupIndex . slList
---   lookupNameIndices              = lookupNameIndices . slList
---   ctxLength                      = slSize
---   ctxExtend na (SizedList len as) = SizedList (len+1) (na:as)
---
 -- | Context as plain 'IntMap' from de Bruijn levels to something.
 --
---   Length     : O(n).
---   Extension  : O(n), as it uses length.
 --   Lookup     : O(log n).
+--   Length     : O(n).
+--   Extend     : O(n), as it uses length.
 --   Name lookup: O(n)
 
 instance Context (IntMap (n,a)) n a where
@@ -154,23 +149,14 @@ instance Context (IntMap (n,a)) n a where
   ctxSizedExtend na (SizedThing len c) = IntMap.insert len na c
 
 -- | IntMap with size field.
+--
+--   Context operations:
+--   Lookup     : O(log n).
+--   Length     : O(1).
+--   Extend     : O(log n).
+--   Name lookup: O(n)
 
 type SizedIntMap a = SizedThing (IntMap a)
-
--- data SizedIntMap a = SizedIntMap { simSize :: !Int, simMap :: IntMap a }
-
--- -- | Context as sized 'IntMap' from de Bruijn levels to something.
--- --
--- --   Length     : O(1).
--- --   Extension  : O(log n).
--- --   Lookup     : O(log n).
--- --   Name lookup: O(n)
-
--- instance Context (SizedIntMap (n,a)) n a where
---   lookupLevel                      = lookupLevel . simMap
---   lookupNameLevels                 = lookupNameLevels . simMap
---   ctxLength                        = simSize
---   ctxExtend na (SizedIntMap len c) = SizedIntMap (len+1) $ IntMap.insert len na c
 
 -- | Context as 'Data.Sequence'.
 --
@@ -187,6 +173,14 @@ instance Context (Seq (n,a)) n a where
   ctxLength                     = Seq.length
   ctxExtend                     = (Seq.<|)
 
+
+-- | Context as 'IntMap' from de Bruijn levels to something,
+--   combined with a 'Map' from names to de Bruijn levels.
+--
+--   Lookup     : O(log n).
+--   Length     : O(n).
+--   Extend     : O(n), as it uses length.
+--   Name lookup: O(log n).
 
 data IntNameMap n a = IntNameMap
   { intMap  :: IntMap (n,a)
@@ -206,19 +200,16 @@ instance Ord n => Context (IntNameMap n a) n a where
     , nameMap = Map.alter (maybe (Just $ IntSet.singleton l) (Just . IntSet.insert l)) n nm
     }
 
+-- | Context as 'IntMap' from de Bruijn levels to something,
+--   combined with a 'Map' from names to de Bruijn levels;
+--   length of context is cached.
+--
+--   Lookup     : O(log n).
+--   Length     : O(1).
+--   Extend     : O(1).
+--   Name lookup: O(log n).
+
 type SizedIntNameMap n a = SizedThing (IntNameMap n a)
-
--- data SizedIntNameMap n a = SizedIntNameMap
---   { sinSize :: !Int
---   , sinMap  :: IntNameMap n a
---   }
-
--- instance Ord n => Context (SizedIntNameMap n a) n a where
---   lookupLevel                        = lookupLevel . sinMap
---   lookupNameLevels                   = lookupNameLevels . sinMap
---   ctxLength                          = sinSize
---   ctxExtend na (SizedIntNameMap l m) = SizedIntNameMap (l+1) $
---     ctxSizedExtend na (l, m)
 
 -- | Context as bimap.
 
