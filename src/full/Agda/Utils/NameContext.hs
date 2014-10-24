@@ -40,18 +40,29 @@ newtype DBLevel = DBLevel { dbLevel :: Int }
 
 -- | Mapping indices/levels to a name and something else.
 --   Supports efficient reverse lookup for names.
+--
+--   Names are not unique, they can be shadowed.
 class Context c n a | c -> a, c -> n where
 
   lookupIndex  :: c -> DBIndex -> Maybe (n, a)
   lookupLevel  :: c -> DBLevel -> Maybe (n, a)
+
+  -- | Get all the bindings that use a specific name.
+  --   Assumption: only a few bindings share the same name,
+  --   thus, the returned list is short.
   lookupNameLevels  :: Ord n => c -> n -> [DBLevel]
   lookupNameIndices :: Ord n => c -> n -> [DBIndex]
 
   indexToLevel :: c -> DBIndex -> DBLevel
   levelToIndex :: c -> DBLevel -> DBIndex
 
-  ctxExtend    :: n -> a -> c -> c
+  ctxExtend    :: (n, a) -> c -> c
   ctxLength    :: c -> Int
+
+  -- | Optimized version of ctxExtend if we have the length of the context already.
+  ctxExtendWithLength :: (n, a) -> (Int, c) -> c
+
+  -- default implementations
 
   lookupIndex c = lookupLevel c . indexToLevel c
   lookupLevel c = lookupIndex c . levelToIndex c
@@ -62,25 +73,29 @@ class Context c n a | c -> a, c -> n where
   indexToLevel c (DBIndex i) = DBLevel $ ctxLength c - i - 1
   levelToIndex c (DBLevel l) = DBIndex $ ctxLength c - l - 1
 
+  ctxExtend na c = ctxExtendWithLength na (ctxLength c, c)
+  ctxExtendWithLength na (_, c) = ctxExtend na c
+
 -- * Instances
 
 -- | Context as association list from names to something.
 --
 --   Lookup and length: O(n).
---   Extension: O(1).
+--   Extension  : O(1).
+--   Name lookup: O(n)
 
 instance Context [(n,a)] n a where
   lookupIndex = (!!!) where
     []       !!! _ = Nothing
     (x : _)  !!! 0 = Just x
-    (_ : xs) !!! n = xs !!! (n - 1)
+    (_ : xs) !!! i = xs !!! (i - 1)
 
   lookupNameIndices c n' =
-    mapMaybe (\ (n,l) -> if  n==n' then Just l else Nothing) $
-      zipWith (\ (n,_) l -> (n,l)) c [0..]
+    mapMaybe (\ (n,i) -> if  n==n' then Just i else Nothing) $
+      zipWith (\ (n,_) i -> (n,i)) c [0..]  -- last binding is first, index 0
 
   ctxLength = length
-  ctxExtend n a = ((n,a) :)
+  ctxExtend = (:)
 
 -- | List with precomputed length.
 --
@@ -89,21 +104,23 @@ data SizedList a = SizedList { slSize :: !Int, slList :: [a] }
 
 -- | Context as sized list.
 --
---   Lookup   : O(n).
---   Length   : O(1).
---   Extension: O(1).
+--   Lookup     : O(n).
+--   Length     : O(1).
+--   Extension  : O(1).
+--   Name lookup: O(n)
 
 instance Context (SizedList (n,a)) n a where
   lookupIndex                    = lookupIndex . slList
   lookupNameIndices              = lookupNameIndices . slList
   ctxLength                      = slSize
-  ctxExtend x a (SizedList n as) = SizedList (n+1) ((x,a):as)
+  ctxExtend na (SizedList len as) = SizedList (len+1) (na:as)
 
 -- | Context as plain 'IntMap' from de Bruijn levels to something.
 --
---   Length   : O(n).
---   Extension: O(n), as it uses length.
---   Lookup   : O(log n).
+--   Length     : O(n).
+--   Extension  : O(n), as it uses length.
+--   Lookup     : O(log n).
+--   Name lookup: O(n)
 
 instance Context (IntMap (n,a)) n a where
   lookupLevel c (DBLevel l) = IntMap.lookup l c
@@ -111,7 +128,7 @@ instance Context (IntMap (n,a)) n a where
     mapMaybe (\ (l,(n,_)) -> if n==n' then Just (DBLevel l) else Nothing) $
       IntMap.assocs c
   ctxLength                 = IntMap.size
-  ctxExtend n a c           = IntMap.insert (ctxLength c) (n,a) c
+  ctxExtendWithLength na (len, c) = IntMap.insert len na c
 
 -- | IntMap with size field.
 
@@ -119,21 +136,23 @@ data SizedIntMap a = SizedIntMap { simSize :: !Int, simMap :: IntMap a }
 
 -- | Context as sized 'IntMap' from de Bruijn levels to something.
 --
---   Length   : O(1).
---   Extension: O(log n).
---   Lookup   : O(log n).
+--   Length     : O(1).
+--   Extension  : O(log n).
+--   Lookup     : O(log n).
+--   Name lookup: O(n)
 
 instance Context (SizedIntMap (n,a)) n a where
-  lookupLevel                     = lookupLevel . simMap
-  lookupNameLevels                = lookupNameLevels . simMap
-  ctxLength                       = simSize
-  ctxExtend x a (SizedIntMap n c) = SizedIntMap (n+1) $ IntMap.insert n (x,a) c
+  lookupLevel                      = lookupLevel . simMap
+  lookupNameLevels                 = lookupNameLevels . simMap
+  ctxLength                        = simSize
+  ctxExtend na (SizedIntMap len c) = SizedIntMap (len+1) $ IntMap.insert len na c
 
 -- | Context as 'Data.Sequence'.
 --
---   Lookup: O(log n).
---   Length: O(1).
---   Extend: O(1).
+--   Lookup     : O(log n).
+--   Length     : O(1).
+--   Extend     : O(1).
+--   Name lookup: O(n)
 
 instance Context (Seq (n,a)) n a where
   lookupIndex c (DBIndex i)
@@ -141,8 +160,35 @@ instance Context (Seq (n,a)) n a where
     | otherwise                 = Nothing
   lookupNameIndices             = lookupNameIndices . Fold.toList
   ctxLength                     = Seq.length
-  ctxExtend n a                 = ((n,a) Seq.<|)
+  ctxExtend                     = (Seq.<|)
 
+
+data IntNameMap n a = IntNameMap
+  { intMap  :: IntMap (n,a)
+  , nameMap :: Map n IntSet
+  }
+
+instance Ord n => Context (IntNameMap n a) n a where
+  lookupLevel                           = lookupLevel . intMap
+  lookupNameLevels c n                  =
+    maybe [] (map DBLevel . IntSet.toList) $ Map.lookup n (nameMap c)
+  ctxLength                             = ctxLength . intMap
+  ctxExtendWithLength na@(n,_) (l, IntNameMap im nm) = IntNameMap
+    { intMap  = ctxExtend na im
+    , nameMap = Map.alter (maybe (Just $ IntSet.singleton l) (Just . IntSet.insert l)) n nm
+    }
+
+data SizedIntNameMap n a = SizedIntNameMap
+  { sinSize :: !Int
+  , sinMap  :: IntNameMap n a
+  }
+
+instance Ord n => Context (SizedIntNameMap n a) n a where
+  lookupLevel                        = lookupLevel . sinMap
+  lookupNameLevels                   = lookupNameLevels . sinMap
+  ctxLength                          = sinSize
+  ctxExtend na (SizedIntNameMap l m) = SizedIntNameMap (l+1) $
+    ctxExtendWithLength na (l, m)
 
 -- | Context as bimap.
 
@@ -159,10 +205,6 @@ instance LevelCollection DBLevel where
   levelMember = (<=)
   levelInsert = max
 
-data IntNameMap n a = IntNameMap
-  { intMap  :: IntMap (n,a)
-  , nameMap :: Map n IntSet
-  }
 
 -- | Variables are represented as de Bruijn indices.
 type Var = Int
