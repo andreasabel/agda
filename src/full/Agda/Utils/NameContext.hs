@@ -8,6 +8,8 @@
 
 module Agda.Utils.NameContext where
 
+import Prelude hiding (null)
+
 import qualified Data.Foldable as Fold
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IntMap
@@ -187,6 +189,10 @@ data IntNameMap n a = IntNameMap
   , nameMap :: Map n IntSet
   }
 
+instance Null (IntNameMap n a) where
+  empty = IntNameMap empty empty
+  null  = null . intMap
+
 instance Sized (IntNameMap n a) where
   size = size . intMap
 
@@ -243,9 +249,26 @@ data Lam a = Var a | App (Lam a) (Lam a) | Abs String (Lam a)
   deriving Show
 
 type Name      = String
-type Cxt       = [Name]
--- type UsedNames = Map Name Int  -- store the lowest DBLevel for a used Name
+type Cxt       = SizedIntNameMap Name ()
 type PrintM a  = Cxt -> (a, UsedNames)
+type UsedNames = Set DBLevel
+
+name :: Lam DBIndex -> PrintM (Lam String)
+name (Var i) gamma = (Var x, Set.singleton $ indexToLevel gamma i)
+  where x = fst $ fromJust $ lookupIndex gamma i
+name (App t u) gamma = (App t' u', Set.union st su)
+  where (t', st) = name t gamma
+        (u', su) = name u gamma
+name (Abs x t) gamma = (Abs x' t', ls)
+  where (t', ls) = name t (ctxExtend (x',()) gamma)
+        x'       = variant x used
+        used x   = any test $ lookupNameLevels gamma x
+          where test l = dbLevel l < ctxLength gamma  && l `Set.member` ls
+
+-- type Name      = String
+-- type Cxt       = [Name]
+-- -- type UsedNames = Map Name Int  -- store the lowest DBLevel for a used Name
+-- type PrintM a  = Cxt -> (a, UsedNames)
 
 -- -- Variant with UsedNames = Set DBLevel
 
@@ -269,24 +292,24 @@ variant x used = addSuffix x $ loop $ Prime 0
     loop s = if used x' then loop (nextSuffix s) else s
       where x' = addSuffix x s
 
--- Variant with UsedNames = Set DBLevel
+-- -- Variant with UsedNames = Set DBLevel
 
-type UsedNames = Set Int
+-- type UsedNames = Set Int
 
-name :: Lam Int -> PrintM (Lam String)
-name (Var i) gamma = (Var x, Set.singleton l)
-  where x = gamma !! i       -- Note:  i < length gamma
-        l = length gamma - i -- de Bruijn Level in [ 1 .. length gamma ]
-   --fromMaybe (error $ "unbound index " ++ show i) $
-name (App t u) gamma = (App t' u', Set.union st su)
-  where (t', st) = name t gamma
-        (u', su) = name u gamma
-name (Abs x t) gamma = (Abs x' t', ls)
-  where (t', ls) = name t (x':gamma)  -- ls in [ 1 .. length (x:gamma) ]
-        x'       = variant x (`Set.member` s)
-        s        = Set.fromList $ map (gamma !!) $ mapMaybe toIndex $ Set.toList ls
-        len      = length gamma
-        toIndex l = if l <= len then Just $ len - l else Nothing
+-- name :: Lam Int -> PrintM (Lam String)
+-- name (Var i) gamma = (Var x, Set.singleton l)
+--   where x = gamma !! i       -- Note:  i < length gamma
+--         l = length gamma - i -- de Bruijn Level in [ 1 .. length gamma ]
+--    --fromMaybe (error $ "unbound index " ++ show i) $
+-- name (App t u) gamma = (App t' u', Set.union st su)
+--   where (t', st) = name t gamma
+--         (u', su) = name u gamma
+-- name (Abs x t) gamma = (Abs x' t', ls)
+--   where (t', ls) = name t (x':gamma)  -- ls in [ 1 .. length (x:gamma) ]
+--         x'       = variant x (`Set.member` s)
+--         s        = Set.fromList $ map (gamma !!) $ mapMaybe toIndex $ Set.toList ls
+--         len      = length gamma
+--         toIndex l = if l <= len then Just $ len - l else Nothing
 
 -- Variant with UsedNames = Set DBIndex
 
@@ -312,7 +335,7 @@ name (Abs x t) gamma = (Abs x' t', ls)
 --     loop s = if x' `Set.member` used then loop (nextSuffix s) else s
 --       where x' = addSuffix x s
 
-doName t = fst $ name t []
+doName t = fst $ name t empty
 
 t0 = Abs "x" $ Var 0
 t0' = doName t0
@@ -323,6 +346,8 @@ t1' = doName t1
 t2 = Abs "x" $ App (Var 0) $ Abs "x" $  (Var 0)
 t2' = doName t2
 
+-- LOOPS:
+--
 -- type Cxt       = [String]
 -- type UsedNames = Set String
 -- type PrintM a  = Cxt -> (a, UsedNames)
