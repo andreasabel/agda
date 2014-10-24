@@ -2,6 +2,7 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Infrastructure for picking names for binders.
 
@@ -25,6 +26,7 @@ import Agda.Utils.Functor
 import Agda.Utils.List
 import Agda.Utils.Maybe
 import Agda.Utils.Null
+import Agda.Utils.Size
 import Agda.Utils.Suffix
 
 
@@ -42,7 +44,7 @@ newtype DBLevel = DBLevel { dbLevel :: Int }
 --   Supports efficient reverse lookup for names.
 --
 --   Names are not unique, they can be shadowed.
-class Context c n a | c -> a, c -> n where
+class Sized c => Context c n a | c -> a, c -> n where
 
   lookupIndex  :: c -> DBIndex -> Maybe (n, a)
   lookupLevel  :: c -> DBLevel -> Maybe (n, a)
@@ -53,14 +55,11 @@ class Context c n a | c -> a, c -> n where
   lookupNameLevels  :: Ord n => c -> n -> [DBLevel]
   lookupNameIndices :: Ord n => c -> n -> [DBIndex]
 
-  indexToLevel :: c -> DBIndex -> DBLevel
-  levelToIndex :: c -> DBLevel -> DBIndex
-
   ctxExtend    :: (n, a) -> c -> c
   ctxLength    :: c -> Int
 
   -- | Optimized version of ctxExtend if we have the length of the context already.
-  ctxExtendWithLength :: (n, a) -> (Int, c) -> c
+  ctxSizedExtend :: (n, a) -> SizedThing c -> c
 
   -- default implementations
 
@@ -70,13 +69,34 @@ class Context c n a | c -> a, c -> n where
   lookupNameLevels  c = map (indexToLevel c) . lookupNameIndices c
   lookupNameIndices c = map (levelToIndex c) . lookupNameLevels  c
 
-  indexToLevel c (DBIndex i) = DBLevel $ ctxLength c - i - 1
-  levelToIndex c (DBLevel l) = DBIndex $ ctxLength c - l - 1
+  ctxLength = size
 
-  ctxExtend na c = ctxExtendWithLength na (ctxLength c, c)
-  ctxExtendWithLength na (_, c) = ctxExtend na c
+  ctxExtend na c = ctxSizedExtend na $ sizeThing c
+  ctxSizedExtend na c = ctxExtend na $ sizedThing c
+
+indexToLevel :: Context c n a => c -> DBIndex -> DBLevel
+indexToLevel c (DBIndex i) = DBLevel $ ctxLength c - i - 1
+
+levelToIndex :: Context c n a => c -> DBLevel -> DBIndex
+levelToIndex c (DBLevel l) = DBIndex $ ctxLength c - l - 1
 
 -- * Instances
+
+-- | Requires @UndecidableInstances@ due to a weakness of
+--   @FunctionalDependencies@.
+--   One would expect that if @c@ determines @n@ and @a@,
+--   so does @SizedThing c@ (which is actually @(Int,c)@).
+--   But GHC fails to see this.
+
+instance (Context c n a) => Context (SizedThing c) n a where
+  lookupIndex = lookupIndex . sizedThing
+  lookupLevel = lookupLevel . sizedThing
+
+  lookupNameLevels  = lookupNameLevels  . sizedThing
+  lookupNameIndices = lookupNameIndices . sizedThing
+
+  ctxLength    = theSize
+  ctxExtend na c = SizedThing (theSize c + 1) $ ctxSizedExtend na c
 
 -- | Context as association list from names to something.
 --
@@ -98,23 +118,26 @@ instance Context [(n,a)] n a where
   ctxExtend = (:)
 
 -- | List with precomputed length.
+type SizedList a = SizedThing [a]
+
+-- -- | List with precomputed length.
+-- --
+-- --   Invariant: @slSize == length . slList@
+-- data SizedList a = SizedList { slSize :: !Int, slList :: [a] }
 --
---   Invariant: @slSize == length . slList@
-data SizedList a = SizedList { slSize :: !Int, slList :: [a] }
-
--- | Context as sized list.
+-- -- | Context as sized list.
+-- --
+-- --   Lookup     : O(n).
+-- --   Length     : O(1).
+-- --   Extension  : O(1).
+-- --   Name lookup: O(n)
 --
---   Lookup     : O(n).
---   Length     : O(1).
---   Extension  : O(1).
---   Name lookup: O(n)
-
-instance Context (SizedList (n,a)) n a where
-  lookupIndex                    = lookupIndex . slList
-  lookupNameIndices              = lookupNameIndices . slList
-  ctxLength                      = slSize
-  ctxExtend na (SizedList len as) = SizedList (len+1) (na:as)
-
+-- instance Context (SizedList (n,a)) n a where
+--   lookupIndex                    = lookupIndex . slList
+--   lookupNameIndices              = lookupNameIndices . slList
+--   ctxLength                      = slSize
+--   ctxExtend na (SizedList len as) = SizedList (len+1) (na:as)
+--
 -- | Context as plain 'IntMap' from de Bruijn levels to something.
 --
 --   Length     : O(n).
@@ -128,24 +151,26 @@ instance Context (IntMap (n,a)) n a where
     mapMaybe (\ (l,(n,_)) -> if n==n' then Just (DBLevel l) else Nothing) $
       IntMap.assocs c
   ctxLength                 = IntMap.size
-  ctxExtendWithLength na (len, c) = IntMap.insert len na c
+  ctxSizedExtend na (SizedThing len c) = IntMap.insert len na c
 
 -- | IntMap with size field.
 
-data SizedIntMap a = SizedIntMap { simSize :: !Int, simMap :: IntMap a }
+type SizedIntMap a = SizedThing (IntMap a)
 
--- | Context as sized 'IntMap' from de Bruijn levels to something.
---
---   Length     : O(1).
---   Extension  : O(log n).
---   Lookup     : O(log n).
---   Name lookup: O(n)
+-- data SizedIntMap a = SizedIntMap { simSize :: !Int, simMap :: IntMap a }
 
-instance Context (SizedIntMap (n,a)) n a where
-  lookupLevel                      = lookupLevel . simMap
-  lookupNameLevels                 = lookupNameLevels . simMap
-  ctxLength                        = simSize
-  ctxExtend na (SizedIntMap len c) = SizedIntMap (len+1) $ IntMap.insert len na c
+-- -- | Context as sized 'IntMap' from de Bruijn levels to something.
+-- --
+-- --   Length     : O(1).
+-- --   Extension  : O(log n).
+-- --   Lookup     : O(log n).
+-- --   Name lookup: O(n)
+
+-- instance Context (SizedIntMap (n,a)) n a where
+--   lookupLevel                      = lookupLevel . simMap
+--   lookupNameLevels                 = lookupNameLevels . simMap
+--   ctxLength                        = simSize
+--   ctxExtend na (SizedIntMap len c) = SizedIntMap (len+1) $ IntMap.insert len na c
 
 -- | Context as 'Data.Sequence'.
 --
@@ -168,27 +193,32 @@ data IntNameMap n a = IntNameMap
   , nameMap :: Map n IntSet
   }
 
+instance Sized (IntNameMap n a) where
+  size = size . intMap
+
 instance Ord n => Context (IntNameMap n a) n a where
   lookupLevel                           = lookupLevel . intMap
   lookupNameLevels c n                  =
     maybe [] (map DBLevel . IntSet.toList) $ Map.lookup n (nameMap c)
   ctxLength                             = ctxLength . intMap
-  ctxExtendWithLength na@(n,_) (l, IntNameMap im nm) = IntNameMap
+  ctxSizedExtend na@(n,_) (SizedThing l (IntNameMap im nm)) = IntNameMap
     { intMap  = ctxExtend na im
     , nameMap = Map.alter (maybe (Just $ IntSet.singleton l) (Just . IntSet.insert l)) n nm
     }
 
-data SizedIntNameMap n a = SizedIntNameMap
-  { sinSize :: !Int
-  , sinMap  :: IntNameMap n a
-  }
+type SizedIntNameMap n a = SizedThing (IntNameMap n a)
 
-instance Ord n => Context (SizedIntNameMap n a) n a where
-  lookupLevel                        = lookupLevel . sinMap
-  lookupNameLevels                   = lookupNameLevels . sinMap
-  ctxLength                          = sinSize
-  ctxExtend na (SizedIntNameMap l m) = SizedIntNameMap (l+1) $
-    ctxExtendWithLength na (l, m)
+-- data SizedIntNameMap n a = SizedIntNameMap
+--   { sinSize :: !Int
+--   , sinMap  :: IntNameMap n a
+--   }
+
+-- instance Ord n => Context (SizedIntNameMap n a) n a where
+--   lookupLevel                        = lookupLevel . sinMap
+--   lookupNameLevels                   = lookupNameLevels . sinMap
+--   ctxLength                          = sinSize
+--   ctxExtend na (SizedIntNameMap l m) = SizedIntNameMap (l+1) $
+--     ctxSizedExtend na (l, m)
 
 -- | Context as bimap.
 
