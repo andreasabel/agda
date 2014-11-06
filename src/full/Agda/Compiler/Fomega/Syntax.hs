@@ -1,9 +1,9 @@
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DeriveFoldable             #-}
 {-# LANGUAGE DeriveTraversable          #-}
+{-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE TypeFamilies               #-}
 
 -- | Compile Agda to System Fω with data types and constructor.
 --
@@ -77,16 +77,14 @@ newtype TyArgs' a = TyArgs { theTyArgs :: [a] }
 -- | Interface to Fω types in β-normal form.
 --   @a@ is a representation of Fomega types.
 
-class Monad m => TypeRep m a where
-  type KindRep_ a :: *
-  -- ^ The representation of kinds.
-  typeView :: a -> m (TypeView' (KindRep_ a) a)
+class Monad m => TypeRep m k a | a -> k where
+  typeView :: a -> m (TypeView' k a)
   -- ^ View @a@ as a type.
   tVar :: TyVar -> TyArgs' a -> a
   -- ^ Construct a neutral application.
   tArrow :: a -> a -> a
   -- ^ Construct a function type.
-  tForall :: KindRep_ a -> I.Abs a -> a
+  tForall :: k -> I.Abs a -> a
   -- ^ Construct a polymorphic type.
   tCon :: QName -> TyArgs' a -> a
   -- ^ Construct a type constructor application.
@@ -97,7 +95,7 @@ class Monad m => TypeRep m a where
   -- ^ Construct an erasure marker.
 
   -- | View @a@ as a function type.
-  funTypeView :: a -> m (FunTypeView' (KindRep_ a) a)
+  funTypeView :: a -> m (FunTypeView' k a)
   funTypeView t = do
     v <- typeView t
     case v of
@@ -117,6 +115,8 @@ data FunTypeView' k a
     --   arguments to functions should be erased.
   | FTNo
     -- ^ We are not a function type of any sort.
+
+newtype WrapType a = WrapType { wrappedType :: a }
 
 -- * Expressions
 

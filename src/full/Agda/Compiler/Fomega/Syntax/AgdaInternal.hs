@@ -1,7 +1,6 @@
 {-# LANGUAGE CPP                   #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeSynonymInstances  #-}  -- ghc >= 7.0
 
 #if __GLASGOW_HASKELL__ >= 709
@@ -27,7 +26,7 @@ import qualified Agda.Compiler.Fomega.Syntax as F
 import Agda.Utils.Functor
 import Agda.Utils.Maybe
 
-#include "../../../undefined.h"
+#include "undefined.h"
 import Agda.Utils.Impossible
 
 -- * Implementation of kinds.
@@ -83,9 +82,7 @@ type Type     = I.Term
 type TyArgs   = TyArgs' Type
 type TypeView = TypeView' Kind Type
 
-instance TypeRep TCM Type where
-
-  type KindRep_ Type = Kind
+instance TypeRep TCM Kind Type where
 
 
 #if __GLASGOW_HASKELL__ >= 709

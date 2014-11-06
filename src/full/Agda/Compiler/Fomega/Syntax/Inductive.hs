@@ -1,6 +1,6 @@
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TypeFamilies #-}
 
 -- | Compile Agda to System Fω with data types and constructor.
 --
@@ -23,6 +23,7 @@ data Kind
     -- ^ Kind of terms @()@.
   | KArrow Kind Kind
     -- ^ Function kind (kind of type constructors) @κ → κ'@.
+  deriving (Show)
 
 -- | System F omega types and type constructors.
 data Type
@@ -40,6 +41,7 @@ data Type
     -- ^ A type coming from Agda that is not representable in System Fω.
   | TErased
     -- ^ Type of erased things (proofs etc.)
+  deriving (Show)
 
 type TyArgs = [Type]
 
@@ -89,9 +91,7 @@ instance Monad m => KindRep m Kind where
 
 type TypeView = F.TypeView' Kind Type
 
-instance Monad m => TypeRep m Type where
-
-  type KindRep_ Type = Kind
+instance Monad m => TypeRep m Kind Type where
 
   -- typeView :: Monad m => Type -> m TypeView
   typeView t =
