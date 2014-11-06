@@ -39,6 +39,7 @@ import Agda.Utils.Lens
 import Agda.Utils.List
 import Agda.Utils.Maybe
 import Agda.Utils.Null
+import Agda.Utils.Pretty (MonadPrec(..))
 import Agda.Utils.Size
 import Agda.Utils.Suffix
 
@@ -259,6 +260,9 @@ class (Null u, Monoid u) => UsedNames u where
 levelSingleton :: (UsedNames u) => DBLevel -> u
 levelSingleton l = levelInsert l empty
 
+nameSingleton :: (UsedNames u) => Name -> u
+nameSingleton l = nameInsert l empty
+
 -- ** UsedNames instance
 
 -- | Implementation of 'UsedNames' by a pair of sets.
@@ -305,7 +309,8 @@ nameUsed c u x = x `nameMember` u
 
 
 class Monad m => MonadName t m | m -> t where
-  useVar :: DBIndex -> m Name
+  useName :: Name -> m ()
+  useVar  :: DBIndex -> m Name
   bindVar :: Name -> t -> m a -> m (Name, a)
 
 newtype NameT c u m a = NameT { unNameT :: ReaderT c (WriterT u m) a }
@@ -317,7 +322,13 @@ newtype NameT c u m a = NameT { unNameT :: ReaderT c (WriterT u m) a }
 instance Monoid u => MonadTrans (NameT c u) where
   lift m = NameT $ lift $ lift m
 
+instance (MonadPrec p m, Monoid u) => MonadPrec p (NameT c u m) where
+  askPrec = lift askPrec
+  localPrec f (NameT m) = NameT $ localPrec f m
+
 instance (Monad m, MonadFix m, Context c Name t, UsedNames u) => MonadName t (NameT c u m) where
+  useName x = NameT $ tell $ nameSingleton x
+
   useVar i = NameT $ do
     cxt <- ask
     let l = indexToLevel cxt i
