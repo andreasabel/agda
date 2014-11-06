@@ -1,9 +1,12 @@
 -- {-# OPTIONS_GHC -fdefer-type-errors #-}
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE FlexibleInstances         #-}
 {-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverlappingInstances      #-}
 {-# LANGUAGE UndecidableInstances      #-}
+{-# LANGUAGE TupleSections             #-}
 
 -- | Pretty printer for Fω syntax
 
@@ -11,9 +14,18 @@ module Agda.Compiler.Fomega.Syntax.Pretty where
 
 import Control.Applicative
 
+import Data.Maybe
+
 import Agda.Compiler.Fomega.Syntax
 
+import qualified Agda.Syntax.Internal as I
+
+import Agda.Utils.NameContext
 import Agda.Utils.Pretty
+import Agda.Utils.Tuple
+
+#include "undefined.h"
+import Agda.Utils.Impossible
 
 -- * Symbols
 
@@ -104,29 +116,33 @@ instance Precedence FPrec where
 
 -- | Note: function space in domain @(k1 -> k2) -> k3@
 --   vs. function space in range @k1 -> k2 -> k3@.
-instance (Functor m, Applicative m, Monad m, Precedence p, PrettyM p m a) => PrettyM p m (KindView' a) where
+instance (Functor m, Applicative m, Monad m, Precedence p, PrettyM p m (WrapKind a)) => PrettyM p m (KindView' a) where
   prettyPrecM k =
     case k of
       KType        -> pure $ dType
       KTerm        -> pure $ dTerm
       KArrow k1 k2 -> parensIf arrowBrackets $ do
         fsep <$> sequence
-          [ goArrowDomain $ prettyPrecM k1
+          [ goArrowDomain $ prettyPrecM $ WrapKind k1
           , pure $ dArrow
-          , goArrowRange  $ prettyPrecM k2
+          , goArrowRange  $ prettyPrecM $ WrapKind k2
           ]
 
+-- | Printer for kind representation.
+
+-- Needs GHC languages extensions, because it is "always applicable"
+-- (type variables instead of type constructors in goal).
+-- {-# LANGUAGE OverlappingInstances      #-}
+-- {-# LANGUAGE UndecidableInstances      #-}
+--
 -- Why does GHC-7.8.3 insist on an "Applicative m" constraint here?!
-instance (Applicative m, Precedence p, MonadPrec p m, KindRep m a) => PrettyM p m a where
-  prettyPrecM a = prettyPrecM =<< kindView a
+instance (Applicative m, Precedence p, MonadPrec p m, KindRep m a) => PrettyM p m (WrapKind a) where
+  prettyPrecM (WrapKind a) = prettyPrecM =<< kindView a
 
 -- * Types
 
-instance PrettyM p m TyVar where
-
-instance (PrettyM p m k, PrettyM p m a) => PrettyM p m (TypeView' k a) where
-  prettyPrecM n a = do
-    t <- typeView a
+instance (Functor m, Applicative m, Precedence p, PrettyM p m k, PrettyM p m a, MonadName () m) => PrettyM p m (TypeView' k a) where
+  prettyPrecM t = do
     case t of
       TUnknown   -> return $ dUnknown
       TErased    -> return $ dErased
@@ -137,19 +153,30 @@ instance (PrettyM p m k, PrettyM p m a) => PrettyM p m (TypeView' k a) where
           , goArrowRange  $ prettyPrecM b
           ]
 
-      TCon c as  -> appParens . fsep . (pretty c :) <$> mapM (prettyPrecM argPrec) as
-      TVar i as  -> appParens . fsep <$> do
-        sequence $ prettyM i : map (prettyPrecM argPrec) as
-      TLam f      -> lamParens <$> prettyPrecM f
-      TForall k f ->
-    where
-      argPrec = _
-      domPrec = 1
-      rngPrec = 0
-      appParens = mparens $ n >= _
-      arrParens = mparens $ n >= _
-      lamParens = mparens $ n >= _
+      TCon c as  -> appParens $ fsep . (pretty c :) <$> do
+        goArgument $ mapM prettyPrecM $ theTyArgs as
+      TVar i as  -> appParens $ fsep <$> do
+        x <- useVar $ DBIndex $ theTyVar i
+        (text x :) <$> do goArgument $ sequence $ map prettyPrecM $ theTyArgs as
+      TLam f      -> lamParens $ do
+        (mx, doc) <- goLambdaBody $ prettyAbs f
+        let x = fromMaybe "_" mx
+        return $ text ("λ " ++ x ++ " →") <+> doc
+      TForall k f -> allParens $ do
+        dk <- goForallDomain $ prettyPrecM k
+        (mx, df) <- goForallBody $ prettyAbs f
+        let x = fromMaybe "_" mx
+        return $ text ("∀ " ++ x ++ " :") <+> dk <> text "." <+> df
 
--- instance (PrettyM p k, PrettyTCM a) => PrettyTCM (TypeView' k a) where
---   prettyTCM
--- -}
+    where
+      appParens = parensIf appBrackets
+      arrParens = parensIf arrowBrackets
+      lamParens = parensIf lamBrackets
+      allParens = parensIf forallBrackets
+
+prettyAbs :: (Functor m, MonadName () m, PrettyM p m a) => I.Abs a -> m (Maybe Name, Doc)
+prettyAbs (I.Abs   x a) = mapFst Just <$> do bindVar x __IMPOSSIBLE__ $ prettyPrecM a
+prettyAbs (I.NoAbs x a) = (Nothing,) <$> prettyPrecM a
+
+instance (Applicative m, Precedence p, MonadPrec p m, TypeRep m a) => PrettyM p m a where
+  prettyPrecM a = prettyPrecM =<< typeView a

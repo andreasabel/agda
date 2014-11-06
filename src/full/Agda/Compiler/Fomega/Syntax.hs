@@ -43,6 +43,8 @@ class Monad m => KindRep m a where
   kArrow   :: a -> a -> a
   -- ^ Construct a function kind.
 
+newtype WrapKind a = WrapKind { wrappedKind :: a }
+
 -- * Types
 
 -- ** Standard view
