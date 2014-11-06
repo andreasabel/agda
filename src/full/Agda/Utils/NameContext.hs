@@ -1,8 +1,12 @@
+{-# LANGUAGE CPP #-}
+-- {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 -- | Infrastructure for picking names for binders.
@@ -10,6 +14,10 @@
 module Agda.Utils.NameContext where
 
 import Prelude hiding (null)
+
+import Control.Applicative hiding (empty)
+import Control.Monad.Reader
+import Control.Monad.Writer
 
 import qualified Data.Foldable as Fold
 import Data.IntMap (IntMap)
@@ -33,6 +41,9 @@ import Agda.Utils.Maybe
 import Agda.Utils.Null
 import Agda.Utils.Size
 import Agda.Utils.Suffix
+
+#include "undefined.h"
+import Agda.Utils.Impossible
 
 
 -- | De Bruijn indices.
@@ -224,7 +235,6 @@ instance Ord n => Context (IntNameMap n a) n a where
 
 type SizedIntNameMap n a = SizedThing (IntNameMap n a)
 
-
 ------------------------------------------------------------------------
 -- * Structure to collect used names in an expression
 ------------------------------------------------------------------------
@@ -292,3 +302,39 @@ nameUsed :: (Context c Name a, UsedNames u) => c -> u -> Name -> Bool
 nameUsed c u x = x `nameMember` u
   || any (`levelMember` u)
          (filter ((<= ctxLength c) . dbLevel) $ lookupNameLevels c x)
+
+
+class Monad m => MonadName t m | m -> t where
+  useVar :: DBIndex -> m Name
+  bindVar :: Name -> t -> m a -> m (Name, a)
+
+newtype NameT c u m a = NameT { unNameT :: ReaderT c (WriterT u m) a }
+  deriving (Functor, Applicative, Monad, MonadFix)
+
+-- does not work:
+-- deriving instance Monoid u => MonadTrans (NameT c u)
+
+instance Monoid u => MonadTrans (NameT c u) where
+  lift m = NameT $ lift $ lift m
+
+instance (Monad m, MonadFix m, Context c Name t, UsedNames u) => MonadName t (NameT c u m) where
+  useVar i = NameT $ do
+    cxt <- ask
+    let l = indexToLevel cxt i
+    tell $ levelSingleton l
+    return $ fst $ fromMaybe __IMPOSSIBLE__ $ lookupLevel cxt l
+
+  bindVar x t (NameT cont) = NameT $ mdo
+    cxt <- ask
+    (result, used) <- listen $ local (ctxExtend (x', t)) cont
+    let x' = nameUsed cxt used `nameVariant` x
+    return (x', result)
+
+runNameT :: NameT c u m a -> c -> m (a, u)
+runNameT (NameT m) c = runWriterT $ runReaderT m c
+
+evalNameT :: Functor m => NameT c u m a -> c -> m a
+evalNameT m c = fst <$> runNameT m c
+
+evalNameT_ :: (Functor m, Null c) => NameT c u m a -> m a
+evalNameT_ m = evalNameT m empty

@@ -3,6 +3,7 @@
 module Agda.Utils.NameContext.Examples where
 
 import Control.Applicative hiding (empty)
+import Control.Monad.Identity
 import Control.Monad.Reader
 import Control.Monad.Writer
 
@@ -18,20 +19,30 @@ data Lam a = Var a | App (Lam a) (Lam a) | Abs String (Lam a)
   deriving Show
 
 type Cxt       = SizedIntNameMap Name ()
-type PrintM a  = ReaderT Cxt (Writer UsedNameSet) a
+type PrintM a  = NameT Cxt UsedNameSet Identity a
 
 name :: Lam DBIndex -> PrintM (Lam String)
-name (Var i) = do
-  gamma <- ask
-  tell $ levelSingleton $ indexToLevel gamma i
-  return $ Var $ fst $ fromJust $ lookupIndex gamma i
+name (Var i)   = Var <$> useVar i
 name (App t u) = App <$> name t <*> name u
-name (Abs x t) = mdo
-  gamma <- ask
-  (t', used) <- listen $ local (ctxExtend (x', ())) $ name t
-  let x' = nameUsed gamma used `nameVariant` x
-  return $ Abs x' t'
+name (Abs x t) = uncurry Abs <$> do bindVar x () $ name t
 
+doName t = evalNameT_ $ name t
+
+-- type PrintM a  = ReaderT Cxt (Writer UsedNameSet) a
+
+-- name :: Lam DBIndex -> PrintM (Lam String)
+-- name (Var i) = do
+--   gamma <- ask
+--   tell $ levelSingleton $ indexToLevel gamma i
+--   return $ Var $ fst $ fromJust $ lookupIndex gamma i
+-- name (App t u) = App <$> name t <*> name u
+-- name (Abs x t) = mdo
+--   gamma <- ask
+--   (t', used) <- listen $ local (ctxExtend (x', ())) $ name t
+--   let x' = nameUsed gamma used `nameVariant` x
+--   return $ Abs x' t'
+
+-- doName t = fst $ runWriter $ runReaderT (name t) empty
 
 -- type PrintM a  = Cxt -> (a, UsedNameSet)
 
@@ -110,8 +121,6 @@ name (Abs x t) = mdo
 --       where x' = addSuffix x s
 
 -- doName t = fst $ name t empty
-
-doName t = fst $ runWriter $ runReaderT (name t) empty
 
 t0 = Abs "x" $ Var 0
 t0' = doName t0
