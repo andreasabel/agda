@@ -5,8 +5,9 @@
 {-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverlappingInstances      #-}
-{-# LANGUAGE UndecidableInstances      #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TupleSections             #-}
+{-# LANGUAGE UndecidableInstances      #-}
 
 -- | Pretty printer for Fω syntax
 
@@ -30,7 +31,7 @@ import Agda.Utils.Impossible
 -- * Symbols
 
 dType, dTerm, dArrow, dForall, dLambda, dUnknown, dErased :: Doc
-dType    = text "*"
+dType    = text "★" -- "*"
 dTerm    = text "()"
 dArrow   = text "→" -- "->"
 dForall  = text "∀" -- "forall"
@@ -141,30 +142,34 @@ instance (Applicative m, Precedence p, MonadPrec p m, KindRep m a) => PrettyM p 
 
 -- * Types
 
-instance (Functor m, Applicative m, Precedence p, PrettyM p m k, PrettyM p m a, MonadName () m) => PrettyM p m (TypeView' k a) where
+instance (Functor m, Applicative m, Precedence p, PrettyM p m k, PrettyM p m (WrapType a), MonadName () m, KindRep m k, TypeRep m k a) => PrettyM p m (TypeView' k a) where
   prettyPrecM t = do
     case t of
       TUnknown   -> return $ dUnknown
       TErased    -> return $ dErased
       TArrow a b -> parensIf arrowBrackets $ do
         fsep <$> sequence
-          [ goArrowDomain $ prettyPrecM a
+          [ goArrowDomain $ prettyPrecM $ WrapType a
           , pure $ dArrow
-          , goArrowRange  $ prettyPrecM b
+          , goArrowRange  $ prettyPrecM $ WrapType b
           ]
 
-      TCon c as  -> appParens $ fsep . (pretty c :) <$> do
-        goArgument $ mapM prettyPrecM $ theTyArgs as
+      TCon c as  -> do
+        let d = pretty c
+        useName $ render d
+        appParens $ fsep . (d :) <$> do
+          goArgument $ mapM (prettyPrecM . WrapType) $ theTyArgs as
+
       TVar i as  -> appParens $ fsep <$> do
         x <- useVar $ DBIndex $ theTyVar i
-        (text x :) <$> do goArgument $ sequence $ map prettyPrecM $ theTyArgs as
+        (text x :) <$> do goArgument $ sequence $ map (prettyPrecM . WrapType) $ theTyArgs as
       TLam f      -> lamParens $ do
-        (mx, doc) <- goLambdaBody $ prettyAbs f
+        (mx, doc) <- goLambdaBody $ prettyAbs (WrapType <$> f)
         let x = fromMaybe "_" mx
         return $ text ("λ " ++ x ++ " →") <+> doc
       TForall k f -> allParens $ do
-        dk <- goForallDomain $ prettyPrecM k
-        (mx, df) <- goForallBody $ prettyAbs f
+        dk <- goForallDomain $ prettyPrecM $ WrapKind k
+        (mx, df) <- goForallBody $ prettyAbs (WrapType <$> f)
         let x = fromMaybe "_" mx
         return $ text ("∀ " ++ x ++ " :") <+> dk <> text "." <+> df
 
@@ -178,5 +183,7 @@ prettyAbs :: (Functor m, MonadName () m, PrettyM p m a) => I.Abs a -> m (Maybe N
 prettyAbs (I.Abs   x a) = mapFst Just <$> do bindVar x __IMPOSSIBLE__ $ prettyPrecM a
 prettyAbs (I.NoAbs x a) = (Nothing,) <$> prettyPrecM a
 
-instance (Applicative m, Precedence p, MonadPrec p m, TypeRep m a) => PrettyM p m a where
-  prettyPrecM a = prettyPrecM =<< typeView a
+instance (Applicative m, Precedence p, MonadPrec p m, MonadName () m, PrettyM p m k, KindRep m k, TypeRep m k a) => PrettyM p m (WrapType a) where
+  prettyPrecM (WrapType a) = do
+    t <- typeView a
+    prettyPrecM t
