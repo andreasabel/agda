@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -18,6 +19,7 @@ import qualified Data.IntSet as IntSet
 import Data.Maybe
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Monoid
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import Data.Set (Set)
@@ -25,6 +27,7 @@ import qualified Data.Set as Set
 
 
 import Agda.Utils.Functor
+import Agda.Utils.Lens
 import Agda.Utils.List
 import Agda.Utils.Maybe
 import Agda.Utils.Null
@@ -40,7 +43,11 @@ newtype DBIndex = DBIndex { dbIndex :: Int }
 newtype DBLevel = DBLevel { dbLevel :: Int }
   deriving (Eq, Ord, Show, Num, Enum)
 
--- * Context class
+------------------------------------------------------------------------
+-- * Context carrying variable name suggestions (and other information)
+------------------------------------------------------------------------
+
+-- ** Context class
 
 -- | Mapping indices/levels to a name and something else.
 --   Supports efficient reverse lookup for names.
@@ -82,7 +89,7 @@ indexToLevel c (DBIndex i) = DBLevel $ ctxLength c - i - 1
 levelToIndex :: Context c n a => c -> DBLevel -> DBIndex
 levelToIndex c (DBLevel l) = DBIndex $ ctxLength c - l - 1
 
--- * Instances
+-- ** Instances
 
 -- | Use the cached size as 'ctxLength' to speed up
 --   every operation relying on 'ctxLength',
@@ -217,162 +224,71 @@ instance Ord n => Context (IntNameMap n a) n a where
 
 type SizedIntNameMap n a = SizedThing (IntNameMap n a)
 
--- | Context as bimap.
 
-class Null l => LevelCollection l where
-  levelMember :: DBLevel -> l -> Bool
-  levelInsert :: DBLevel -> l -> l
+------------------------------------------------------------------------
+-- * Structure to collect used names in an expression
+------------------------------------------------------------------------
 
---
-instance Null DBLevel where
-  null  = (< 0)
-  empty = 0 - 1
+-- | Concrete names for printing variables and definitions.
+type Name = String
 
-instance LevelCollection DBLevel where
-  levelMember = (<=)
-  levelInsert = max
+-- ** UsedNames class
+
+-- | Collect used names (from defined things) and de Bruijn levels
+--   (free variables).
+
+class (Null u, Monoid u) => UsedNames u where
+  levelInsert :: DBLevel -> u -> u
+  nameInsert  :: Name -> u -> u
+
+  levelMember :: DBLevel -> u -> Bool
+  nameMember  :: Name -> u -> Bool
+
+  setOfUsedNames :: (DBLevel -> Name) -> u -> Set Name
+
+levelSingleton :: (UsedNames u) => DBLevel -> u
+levelSingleton l = levelInsert l empty
+
+-- ** UsedNames instance
+
+-- | Implementation of 'UsedNames' by a pair of sets.
+data UsedNameSet = UsedNameSet
+  { _usedLevels :: Set DBLevel
+  , _usedNames  :: Set Name
+  }
+
+-- | Lens for '_usedLevels'.
+usedLevels :: Lens' (Set DBLevel) UsedNameSet
+usedLevels f o = f (_usedLevels o) <&> \ i -> o { _usedLevels = i }
+
+-- | Lens for '_usedNames'.
+usedNames :: Lens' (Set Name) UsedNameSet
+usedNames f o = f (_usedNames o) <&> \ i -> o { _usedNames = i }
+
+instance Null UsedNameSet where
+  empty  = UsedNameSet empty empty
+  null u = null (u ^. usedLevels) && null (u ^. usedNames)
+
+instance Monoid UsedNameSet where
+  mempty = empty
+  mappend (UsedNameSet ls ns) (UsedNameSet ls' ns') =
+    UsedNameSet (mappend ls ls') (mappend ns ns')
+
+instance UsedNames UsedNameSet where
+  levelInsert l = over usedLevels $ Set.insert l
+  nameInsert x  = over usedNames  $ Set.insert x
+
+  levelMember l u = Set.member l $ u ^. usedLevels
+  nameMember x  u = Set.member x $ u ^. usedNames
+
+  setOfUsedNames f u = Set.map f (u ^. usedLevels) `mappend` (u ^. usedNames)
 
 
--- | Variables are represented as de Bruijn indices.
-type Var = Int
+-- * Fresh name generation tools for printing in a name Context.
 
--- | Predicate 'MayShadow' indicates which de Bruijn indices
---   can be ignored when a new name conflicts with an old name.
-type MayShadow = Var -> Bool
-
-class NameContext c where
-  nameOf :: c -> Var -> String
-  addName :: String -> c -> c
-
-
-data Lam a = Var a | App (Lam a) (Lam a) | Abs String (Lam a)
-  deriving Show
-
-type Name      = String
-type Cxt       = SizedIntNameMap Name ()
-type PrintM a  = Cxt -> (a, UsedNames)
-type UsedNames = Set DBLevel
-
-name :: Lam DBIndex -> PrintM (Lam String)
-name (Var i) gamma = (Var x, Set.singleton $ indexToLevel gamma i)
-  where x = fst $ fromJust $ lookupIndex gamma i
-name (App t u) gamma = (App t' u', Set.union st su)
-  where (t', st) = name t gamma
-        (u', su) = name u gamma
-name (Abs x t) gamma = (Abs x' t', ls)
-  where (t', ls) = name t (ctxExtend (x',()) gamma)
-        x'       = variant x used
-        used x   = any test $ lookupNameLevels gamma x
-          where test l = dbLevel l < ctxLength gamma  && l `Set.member` ls
-
--- type Name      = String
--- type Cxt       = [Name]
--- -- type UsedNames = Map Name Int  -- store the lowest DBLevel for a used Name
--- type PrintM a  = Cxt -> (a, UsedNames)
-
--- -- Variant with UsedNames = Set DBLevel
-
--- name :: Lam Int -> PrintM (Lam Name)
--- name (Var i) gamma = (Var x, Map.singleton x l)
---   where x = gamma !! i       -- Note:  i < length gamma
---         l = length gamma - i -- de Bruijn Level in [ 1 .. length gamma ]
---    --fromMaybe (error $ "unbound index " ++ show i) $
--- name (App t u) gamma = (App t' u', Map.unionWith min st su)
---   where (t', st) = name t gamma
---         (u', su) = name u gamma
--- name (Abs x t) gamma = (Abs x' t', ls)
---   where (t', ls) = name t (x':gamma)  -- ls in [ 1 .. length (x:gamma) ]
---         x'       = variant x used
---         used y   = caseMaybe (Map.lookup y ls) False (< length gamma)
---         -- NON-TERMINATING (BAD CYCLE)
-
-variant :: Name -> (Name -> Bool) -> Name
-variant x used = addSuffix x $ loop $ Prime 0
-  where
-    loop s = if used x' then loop (nextSuffix s) else s
-      where x' = addSuffix x s
-
--- -- Variant with UsedNames = Set DBLevel
-
--- type UsedNames = Set Int
-
--- name :: Lam Int -> PrintM (Lam String)
--- name (Var i) gamma = (Var x, Set.singleton l)
---   where x = gamma !! i       -- Note:  i < length gamma
---         l = length gamma - i -- de Bruijn Level in [ 1 .. length gamma ]
---    --fromMaybe (error $ "unbound index " ++ show i) $
--- name (App t u) gamma = (App t' u', Set.union st su)
---   where (t', st) = name t gamma
---         (u', su) = name u gamma
--- name (Abs x t) gamma = (Abs x' t', ls)
---   where (t', ls) = name t (x':gamma)  -- ls in [ 1 .. length (x:gamma) ]
---         x'       = variant x (`Set.member` s)
---         s        = Set.fromList $ map (gamma !!) $ mapMaybe toIndex $ Set.toList ls
---         len      = length gamma
---         toIndex l = if l <= len then Just $ len - l else Nothing
-
--- Variant with UsedNames = Set DBIndex
-
--- type UsedNames = Set Int
-
--- name :: Lam Int -> PrintM (Lam String)
--- name (Var i) gamma = (Var x, Set.singleton i)
---   where x = gamma !! i
---         l = length gamma - i
---    --fromMaybe (error $ "unbound index " ++ show i) $
--- name (App t u) gamma = (App t' u', Set.union st su)
---   where (t', st) = name t gamma
---         (u', su) = name u gamma
--- name (Abs x t) gamma = (Abs x' t', is')
---   where (t', is) = name t (x':gamma)
---         is'      = Set.mapMonotonic (\ x -> x - 1) $ Set.delete 0 is
---         s        = Set.map (gamma !!) is'
---         x'       = variant x s
-
--- variant :: String -> Set String -> String
--- variant x used = addSuffix x $ loop $ Prime 0
---   where
---     loop s = if x' `Set.member` used then loop (nextSuffix s) else s
---       where x' = addSuffix x s
-
-doName t = fst $ name t empty
-
-t0 = Abs "x" $ Var 0
-t0' = doName t0
-
-t1 = Abs "x" $ Abs "x" $ App (Var 0) (Var 1)
-t1' = doName t1
-
-t2 = Abs "x" $ App (Var 0) $ Abs "x" $  (Var 0)
-t2' = doName t2
-
--- LOOPS:
---
--- type Cxt       = [String]
--- type UsedNames = Set String
--- type PrintM a  = Cxt -> (a, UsedNames)
-
--- name :: Lam Int -> PrintM (Lam String)
--- name (Var i) gamma = (Var x, Set.singleton x)
---   where x = gamma !! i
---    --fromMaybe (error $ "unbound index " ++ show i) $
--- name (App t u) gamma = (App t' u', Set.union st su)
---   where (t', st) = name t gamma
---         (u', su) = name u gamma
--- name (Abs x t) gamma = (Abs x' t', s)
---   where (t', s) = name t (x':gamma)
---         x'      = variant x s
-
--- variant :: String -> Set String -> String
--- variant x used = addSuffix x $ loop NoSuffix
---   where
---     loop s = if x' `Set.member` used then loop (nextSuffix s) else s
---       where x' = addSuffix x s
-
--- doName t = fst $ name t []
-
--- t0 = Abs "x" $ Var 0
--- t0' = doName t0
-
--- t1 = Abs "x" $ Abs "x" $ App (Var 0) (Var 1)
--- t1' = doName t1
+-- | In a given context and set of levels and names mentioned in an expression,
+--   check whether a name is taken.
+nameUsed :: (Context c Name a, UsedNames u) => c -> u -> Name -> Bool
+nameUsed c u x = x `nameMember` u
+  || any (`levelMember` u)
+         (filter ((<= ctxLength c) . dbLevel) $ lookupNameLevels c x)
