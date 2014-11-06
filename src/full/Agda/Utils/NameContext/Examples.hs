@@ -1,8 +1,15 @@
+{-# LANGUAGE RecursiveDo #-}
+
 module Agda.Utils.NameContext.Examples where
+
+import Control.Applicative hiding (empty)
+import Control.Monad.Reader
+import Control.Monad.Writer
 
 import Data.Maybe
 import Data.Monoid
 
+import Agda.Utils.Functor
 import Agda.Utils.NameContext
 import Agda.Utils.Null
 import Agda.Utils.Suffix
@@ -11,17 +18,32 @@ data Lam a = Var a | App (Lam a) (Lam a) | Abs String (Lam a)
   deriving Show
 
 type Cxt       = SizedIntNameMap Name ()
-type PrintM a  = Cxt -> (a, UsedNameSet)
+type PrintM a  = ReaderT Cxt (Writer UsedNameSet) a
 
 name :: Lam DBIndex -> PrintM (Lam String)
-name (Var i) gamma = (Var x, levelSingleton $ indexToLevel gamma i)
-  where x = fst $ fromJust $ lookupIndex gamma i
-name (App t u) gamma = (App t' u', mappend st su)
-  where (t', st) = name t gamma
-        (u', su) = name u gamma
-name (Abs x t) gamma = (Abs x' t', ls)
-  where (t', ls) = name t (ctxExtend (x',()) gamma)
-        x'       = (`nameVariant` x) $ nameUsed gamma ls
+name (Var i) = do
+  gamma <- ask
+  tell $ levelSingleton $ indexToLevel gamma i
+  return $ Var $ fst $ fromJust $ lookupIndex gamma i
+name (App t u) = App <$> name t <*> name u
+name (Abs x t) = mdo
+  gamma <- ask
+  (t', used) <- listen $ local (ctxExtend (x', ())) $ name t
+  let x' = nameUsed gamma used `nameVariant` x
+  return $ Abs x' t'
+
+
+-- type PrintM a  = Cxt -> (a, UsedNameSet)
+
+-- name :: Lam DBIndex -> PrintM (Lam String)
+-- name (Var i) gamma = (Var x, levelSingleton $ indexToLevel gamma i)
+--   where x = fst $ fromJust $ lookupIndex gamma i
+-- name (App t u) gamma = (App t' u', mappend st su)
+--   where (t', st) = name t gamma
+--         (u', su) = name u gamma
+-- name (Abs x t) gamma = (Abs x' t', ls)
+--   where (t', ls) = name t (ctxExtend (x',()) gamma)
+--         x'       = (`nameVariant` x) $ nameUsed gamma ls
 
 -- type Name      = String
 -- type Cxt       = [Name]
@@ -87,7 +109,9 @@ name (Abs x t) gamma = (Abs x' t', ls)
 --     loop s = if x' `Set.member` used then loop (nextSuffix s) else s
 --       where x' = addSuffix x s
 
-doName t = fst $ name t empty
+-- doName t = fst $ name t empty
+
+doName t = fst $ runWriter $ runReaderT (name t) empty
 
 t0 = Abs "x" $ Var 0
 t0' = doName t0
