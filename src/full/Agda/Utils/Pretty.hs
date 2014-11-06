@@ -7,6 +7,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 {-| Pretty printing functions.
 -}
@@ -17,6 +18,7 @@ module Agda.Utils.Pretty
 
 import Control.Applicative
 import Control.Monad.Reader
+import Control.Monad.Writer (Monoid,WriterT(..))
 import Control.Monad.Trans
 
 import Data.Function
@@ -91,9 +93,19 @@ instance TopPrecedence Int where
 
 -- | Precedence context monad.  A copy of 'MonadReader'.
 
-class MonadPrec p m | m -> p where
+class Monad m => MonadPrec p m | m -> p where
   askPrec   :: m p
   localPrec :: (p -> p) -> m a -> m a
+
+-- The functional dependency requires UndecidableInstances:
+-- Apparently m -> p does not imply ReaderT r m -> p.
+instance MonadPrec p m => MonadPrec p (ReaderT r m) where
+  askPrec = lift $ askPrec
+  localPrec f (ReaderT m) = ReaderT $ \ r -> localPrec f (m r)
+
+instance (MonadPrec p m, Monoid w) => MonadPrec p (WriterT w m) where
+  askPrec = lift $ askPrec
+  localPrec f (WriterT m) = WriterT $ localPrec f m
 
 -- | Continue in top context.
 inTopPrec :: (TopPrecedence p, MonadPrec p m) => m a -> m a
@@ -106,7 +118,15 @@ inTopPrec = localPrec $ const topPrecedence
 
 -- | Precedence monad transformer.
 newtype PrecT p m a = PrecT { unPrecT :: ReaderT p m a }
-  deriving (Functor, Applicative, Monad, MonadTrans)
+  deriving (Functor, Applicative, Monad, MonadTrans, MonadFix)
+
+instance Monad m => MonadPrec p (PrecT p m) where
+  askPrec = PrecT $ ask
+  localPrec f (PrecT m) = PrecT $ local f m
+
+-- instance MonadFix m => MonadFix (PrecT p m) where
+--   -- mfix :: (a -> PrecT p m a) -> PrecT p m a
+--   mfix f = PrecT $ mfix (unPrecT . f)
 
 -- | Running precedence-reading computation.
 runPrecT' :: PrecT p m a -> p -> m a
