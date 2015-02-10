@@ -105,24 +105,32 @@
 
 module Agda.Compiler.Fomega.Extract where
 
+import Control.Applicative hiding (empty)
+
+import Control.Monad
+import Control.Monad.Trans
 import Control.Monad.Trans.Maybe
 
-import Agda.Syntax.Common
+import Agda.Syntax.Common hiding (Dom)
+import Agda.Syntax.Literal
 -- import Agda.Syntax.Internal (Term(..))
 import Agda.Syntax.Internal hiding (Type)
 import qualified Agda.Syntax.Internal as I
 
+import Agda.TypeChecking.Datatypes
 import Agda.TypeChecking.Monad
 import Agda.TypeChecking.Reduce
 import Agda.TypeChecking.Substitute
 
 import Agda.Compiler.Fomega.Syntax
--- import qualified Agda.Compiler.Fomega.Syntax as F
+import Agda.Compiler.Fomega.Syntax.AgdaInternal (Kind, Type)
+import Agda.Compiler.Fomega.Syntax.Inductive (Expr)
 
 import Agda.Utils.Functor
 import Agda.Utils.Maybe
+import Agda.Utils.Null
 
-#include "../../undefined.h"
+#include "undefined.h"
 import Agda.Utils.Impossible
 
 -- | Extraction monad.
@@ -168,19 +176,19 @@ class ExtractKind a where
   extractKindDom :: a -> Extract Kind
   extractKindDom a = fromMaybe kTerm <$> extractKind a
 
-instance ExtractKind Term where
+instance ExtractKind I.Term where
   extractKind' v = do
     v <- reduce v
     case ignoreSharing v of
-      Sort{}   -> pure $ kType
-      Pi dom b -> kArr <$> lift (extractKindDom dom)
-                       <*> extractKind' (absApp b dummy)
+      I.Sort{}   -> pure $ kType
+      I.Pi dom b -> kArrow <$> lift (extractKindDom dom)
+                           <*> extractKind' (absApp b dummy)
       _        -> mzero
     where
-      dummy = Literal $ LitString noRange $
+      dummy = I.Lit $ LitString empty $
         "VariableSubstitutedDuringKindExtraction"
 
-instance ExtractKind Type where
+instance ExtractKind I.Type where
   extractKind' = extractKind' . unEl
 
 instance ExtractKind a => ExtractKind (Dom a) where
@@ -202,23 +210,24 @@ instance ExtractType Term where
     v <- reduce v
     case ignoreSharing v of
       -- The following are not types:
-      Lam{}    -> __IMPOSSIBLE__
-      ExtLam{} -> __IMPOSSIBLE__
-      Lit{}    -> __IMPOSSIBLE__
-      Con{}    -> __IMPOSSIBLE__
+      I.Lam{}    -> __IMPOSSIBLE__
+      I.ExtLam{} -> __IMPOSSIBLE__
+      I.Lit{}    -> __IMPOSSIBLE__
+      I.Con{}    -> __IMPOSSIBLE__
       -- Neutral types:
-      Var i es    -> do
+      I.Var i es    -> do
+        caseMaybe (allApplyElims es) (return tUnknown) $ \ args -> do
         t <- typeOfBV i
-        tVar i <$> extractTypeElims t es
+        tVar i <$> extractTypeArgs t args
       -- Data types and stuck defined types:
-      Def d es -> do
+      I.Def d es -> do
         caseMaybeM (isDataOrRecord d) (return tUnknown) $ \ _ -> do
         -- @d@ is data or record constructor:
         t <- defType <$> getConstInfo
         let args = fromMaybe __IMPOSSIBLE__ $ allApplyElims es
         tCon d <$> do extractTypeArgs t args
       -- Function types and polymorphic types
-      Pi dom b -> do
+      I.Pi dom b -> do
         mk <- extractKind dom
         case mk of
           -- If @dom@ is a kind @κ@, we return a polymorphic type @∀X:κ.T@.
@@ -229,17 +238,166 @@ instance ExtractType Term where
           Nothing -> tArrow <$> extractType dom
                             <*> extractType (absApp b dummy)
       -- Universes and Level carry no runtime content:
-      Sort{}   -> tErased
-      Level{}  -> tErased
+      I.Sort{}   -> tErased
+      I.Level{}  -> tErased
       -- A meta variable can stand for anything.
-      MetaV{}  -> tUnknown
-      Shared{} -> __IMPOSSIBLE__
+      I.MetaV{}  -> tUnknown
+      I.Shared{} -> __IMPOSSIBLE__
     where
-      dummy = Literal $ LitString noRange $
+      dummy = I.Lit $ LitString empty $
         "VariableSubstitutedDuringTypeExtraction"
+
+extractTypeArgs = undefined
 
 instance ExtractType I.Type where
   extractType = extractType . unEl
 
 instance ExtractType a => ExtractType (Dom a) where
   extractType = extractType . unDom
+
+
+
+-- * Terms
+
+{-
+
+Bidirectional extraction
+========================
+
+Types
+
+  Base ::= D As         data type
+         | ?            inexpressible type
+
+  A,B ::= Base | A -> B | [x:K] -> B | [] -> B  with erasure markers
+  A0, B0 ::= Base | A0 -> B0 | [x:K0] -> B0     without erasure markers
+
+  |.| erase erasure markers
+
+Inference mode:
+
+  Term extraction:  Gamma |- t :> A  --> e    |Gamma| |- e : |A|
+  Type extraction:  Gamma |- T :> K  --> A    |Gamma| |- A : |K|
+  Kind extraction:  Gamma |- U :> [] --> K    |Gamma| |- K : []
+
+Checking mode:
+
+  Term extraction:  Gamma |- t <: A  --> e    |Gamma| |- e : |A|
+  Type extraction:  Gamma |- T <: K  --> A    |Gamma| |- A : |K|
+  Kind extraction:  Gamma |- U <: [] --> K    |Gamma| |- K : []
+
+Type and kind extraction keep erasure markers!
+
+Checking abstraction:
+
+  Relevant abstraction:
+  Gamma, x:A |- t <: B --> e
+  --------------------------------
+  Gamma |- \x.t <: A -> B --> \x.e
+
+  Type abstraction:
+  Gamma, x:K |- t <: B --> e : B0
+  ----------------------------------------
+  Gamma |- \[x].t <: [x:K] -> B --> \[x].e
+      also \xt
+
+  Irrelevant abstraction:
+  Gamma |- t : B --> e
+  -------------------------------
+  Gamma |- \[x].t : [] -> B --> e
+      also \xt
+
+  Relevant abstraction at unknown type:
+  Gamma, x:? |- t : ? --> e
+  --------------------------
+  Gamma |- \x.t : ? --> \x.e
+
+  Irrelevant abstraction at unknown type:
+  Gamma |- t : ? --> e
+  -------------------------
+  Gamma |- \[x].t : ? --> e
+
+Checking by inference:
+
+  Gamma |- t :> A --> e    e : |A| <: |B| --> e'
+  ----------------------------------------------
+  Gamma |- t <: B --> e' : B0
+
+Casting:
+
+  ------------------ A0 does not contain ?
+  e : A0 <: A0 --> e
+
+  ----------------------- A0 != B0 or one does contain ?
+  e : A0 <: B0 --> cast e
+
+Inferring variable:
+
+  ----------------------------
+  Gamma |- x :> Gamma(x) --> x
+
+Inferring application:
+
+  Relevant application:
+  Gamma |- t :> A -> B --> f     Gamma |- u <: A --> e
+  ----------------------------------------------------
+  Gamma |- t u :> B --> f e
+
+  Type application:
+  Gamma |- t :> [x:K] -> B --> f   Gamma |- u <: K --> A
+  ------------------------------------------------------
+  Gamma |- t [u] :> : B[A/x] --> f [A]
+      also  t u
+
+  Irrelevant application:
+  Gamma |- t :> [] -> B --> f
+  ---------------------------
+  Gamma |- t [u] :> B --> f
+      also  t u
+
+  Relevant application at unknown type:
+  Gamma |- t :> ? --> f     Gamma |- u <: ? --> e
+  -----------------------------------------------
+  Gamma |- t u :> ? --> f e
+
+  Irrelevant application at unknown type:
+  Gamma |- t :> ? --> f
+  -------------------------
+  Gamma |- t [u] :> ? --> f
+
+
+
+-}
+
+class ExtractTerm a where
+  extractTermCheck :: a -> Type -> Extract Expr
+  extractTermInfer :: a -> Extract (Expr, Type)
+
+instance ExtractTerm Term where
+  extractTermCheck v a = do
+    case ignoreSharing v of
+      Lam ai b -> do
+        let x = absName b
+        ft <- funTypeView a
+        case ft of
+          FTArrow t u -> do
+            underAbstraction t b $ \ v -> do
+              e <- extractTermCheck v u
+              return $ fLam TermArg $ mkAbs x e
+          FTForall k f -> do
+            underAbstraction k b $ \ v -> do
+              e <- extractTermCheck v (absBody f)
+              return $ fLam TypeArg $ mkAbs x e
+          FTEraseArg u -> do
+            underAbstraction tErased b $ \ v -> do
+              e <- extractTermCheck v u
+              return $ strengthen __IMPOSSIBLE__ e
+          FTNo -> fCoerce <$> do
+            if getRelevance ai `elem` [Irrelevant, Unused, Forced] then do
+                underAbstraction tErased b $ \ v -> do
+                  e <- extractTermCheck v tUnknown
+                  return $ strengthen __IMPOSSIBLE__ e
+             else do
+                underAbstraction tUnknown b $ \ v -> do
+                  e <- extractTermCheck v tUnknown
+                  return $ fLam TermArg $ mkAbs x e

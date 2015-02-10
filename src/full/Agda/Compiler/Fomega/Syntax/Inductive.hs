@@ -109,6 +109,7 @@ instance Monad m => TypeRep m Kind Type where
   tForall   = TForall
   tCon d ts = TCon d (F.theTyArgs ts)
   tLam      = TLam
+  tUnknown  = TUnknown
   tErased   = TErased
 
 

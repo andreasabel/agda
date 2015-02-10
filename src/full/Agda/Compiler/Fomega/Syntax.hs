@@ -90,7 +90,8 @@ class Monad m => TypeRep m k a | a -> k where
   -- ^ Construct a type constructor application.
   tLam :: I.Abs a -> a
   -- ^ Construct a type-level lambda.
-  -- tUnknown :: a -- NEEDED?
+  tUnknown :: a
+  -- ^ Construct an unknown type.
   tErased  :: a
   -- ^ Construct an erasure marker.
 

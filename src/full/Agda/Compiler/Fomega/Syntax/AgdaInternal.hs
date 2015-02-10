@@ -12,6 +12,7 @@
 module Agda.Compiler.Fomega.Syntax.AgdaInternal where
 
 import Agda.Syntax.Common
+import Agda.Syntax.Literal
 -- import Agda.Syntax.Internal (Term(..))
 import Agda.Syntax.Internal hiding (Type)
 import qualified Agda.Syntax.Internal as I
@@ -25,6 +26,7 @@ import qualified Agda.Compiler.Fomega.Syntax as F
 
 import Agda.Utils.Functor
 import Agda.Utils.Maybe
+import Agda.Utils.Null
 
 #include "undefined.h"
 import Agda.Utils.Impossible
@@ -133,6 +135,8 @@ instance TypeRep TCM Kind Type where
   tErased :: Type
 #endif
   tErased = I.Sort $ mkType 0
+
+  tUnknown = I.Lit $ LitString empty "NotFomegaType"
 
 
 -- -- * Expressions
