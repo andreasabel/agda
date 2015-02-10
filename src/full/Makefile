@@ -21,11 +21,9 @@ TAGS : $(src_files) $(hTags) $(hTags_include)
 
 src_files=$(shell find . \( \( -name '*.hs' -o -name '*.lhs' \) ! -name '.*' \) )
 
-src_files=$(shell find . -name '*.hs' -o -name '*.lhs')
-
 # Andreas: create tags for everything exept Auto and Compilers
-# ignore = $(patsubst ./%,%,$(shell find ./Agda/Auto ./Agda/Compiler -name '*.hs' -o -name '*.lhs'))
-ignore = $(shell find ./Agda/Auto ./Agda/Compiler ./Agda/Packaging -name '*.hs' -o -name '*.lhs')
+#ignore = $(patsubst ./%,%,$(shell find ./Agda/Auto ./Agda/Compiler/JS ./Agda/Compiler/MAlonzo ./Agda/Compiler/Epic -name '*.hs' -o -name '*.lhs'))
+ignore = $(shell find ./Agda/Auto ./Agda/Compiler/JS ./Agda/Compiler/MAlonzo ./Agda/Compiler/Epic -name '*.hs' -o -name '*.lhs')
 tag_files = $(filter-out $(ignore),$(src_files))
 
 mytags :  $(tag_files) $(hTags) $(hTags_include)
