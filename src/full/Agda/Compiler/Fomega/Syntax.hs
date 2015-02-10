@@ -33,8 +33,8 @@ data KindView' a
   | KArrow a a
     -- ^ Function kind (kind of type constructors) @κ → κ'@.
 
-class Monad m => KindRep m a where
-  kindView :: a -> m (KindView' a)
+class KindRep a where
+  kindView :: a -> KindView' a
   -- ^ View @a@ as kind.
   kType    :: a
   -- ^ Construct the kind @*@ of types.
@@ -77,8 +77,8 @@ newtype TyArgs' a = TyArgs { theTyArgs :: [a] }
 -- | Interface to Fω types in β-normal form.
 --   @a@ is a representation of Fomega types.
 
-class Monad m => TypeRep m k a | a -> k where
-  typeView :: a -> m (TypeView' k a)
+class TypeRep k a | a -> k where
+  typeView :: a -> TypeView' k a
   -- ^ View @a@ as a type.
   tVar :: TyVar -> TyArgs' a -> a
   -- ^ Construct a neutral application.
@@ -96,7 +96,7 @@ class Monad m => TypeRep m k a | a -> k where
   -- ^ Construct an erasure marker.
 
   -- | View @a@ as a function type.
-  funTypeView :: a -> m (FunTypeView' k a)
+  funTypeView :: a -> FunTypeView' k a
   funTypeView t = do
     v <- typeView t
     case v of
@@ -162,9 +162,9 @@ newtype Args' a = Args { theArgs :: [Arg a] }
 
 -- ** Class interface
 
-class Monad m => ExprRep m a where
+class ExprRep a where
 
-  exprView :: a -> m (ExprView' a)
+  exprView :: a -> ExprView' a
   -- ^ View @a@ as expression.
 
   fVar :: Var -> Args' a -> a
