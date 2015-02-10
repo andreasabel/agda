@@ -15,13 +15,13 @@ import Agda.Utils.NameContext
 import Agda.Utils.Null
 import Agda.Utils.Suffix
 
-data Lam a = Var a | App (Lam a) (Lam a) | Abs String (Lam a)
+data Lam a = Var a | App (Lam a) (Lam a) | Abs Name (Lam a)
   deriving Show
 
 type Cxt       = SizedIntNameMap Name ()
 type PrintM a  = NameT Cxt UsedNameSet Identity a
 
-name :: Lam DBIndex -> PrintM (Lam String)
+name :: Lam DBIndex -> PrintM (Lam Name)
 name (Var i)   = Var <$> useVar i
 name (App t u) = App <$> name t <*> name u
 name (Abs x t) = uncurry Abs <$> do bindVar x () $ name t
