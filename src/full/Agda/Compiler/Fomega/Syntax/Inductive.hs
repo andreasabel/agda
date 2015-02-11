@@ -14,7 +14,6 @@ import Agda.Syntax.Literal
 
 import Agda.Compiler.Fomega.Syntax (KindRep(..), TypeRep(..), ExprRep(..), ArgInfo(..), Arg(..))
 import qualified Agda.Compiler.Fomega.Syntax as F
-
 -- compilation error: Could not find module ‘Agda.Compiler.Fomega.Syntax’ ?
 
 -- | System F omega kinds.
@@ -77,7 +76,8 @@ type Args = [Arg Expr]
 
 type KindView = F.KindView' Kind
 
-instance Monad m => KindRep m Kind where
+--instance Monad m => KindRep m Kind where
+instance KindRep Kind where
 
   -- kindView :: Monad m => Kind -> m KindView
   kindView KType         = F.KType
@@ -93,7 +93,8 @@ instance Monad m => KindRep m Kind where
 
 type TypeView = F.TypeView' Kind Type
 
-instance Monad m => TypeRep m Kind Type where
+--instance Monad m => TypeRep m Kind Type where
+instance TypeRep Kind Type where
 
   -- typeView :: Monad m => Type -> m TypeView
   typeView t =
@@ -119,8 +120,9 @@ instance Monad m => TypeRep m Kind Type where
 
 type ExprView = F.ExprView' Expr
 
-instance Monad m => ExprRep m Expr where
-
+--instance Monad m => ExprRep m Expr where
+instance ExprRep Expr where
+    
   -- exprView :: Expr -> m ExprView
   exprView e =
     case e of
