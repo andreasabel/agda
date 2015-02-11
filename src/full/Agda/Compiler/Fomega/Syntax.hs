@@ -97,12 +97,12 @@ class TypeRep k a | a -> k where
 
   -- | View @a@ as a function type.
   funTypeView :: a -> FunTypeView' k a
-  funTypeView t = do
-    v <- typeView t
-    case v of
-      TArrow a b  -> return $ FTArrow a b
-      TForall k f -> return $ FTForall k f
-      _ -> return $ FTNo
+  funTypeView t =
+    let v = typeView t
+    in case v of
+      TArrow a b  -> FTArrow a b
+      TForall k f -> FTForall k f
+      _ -> FTNo
 
 -- ** Function type view
 
