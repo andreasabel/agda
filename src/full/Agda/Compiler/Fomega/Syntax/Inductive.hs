@@ -15,6 +15,8 @@ import Agda.Syntax.Literal
 import Agda.Compiler.Fomega.Syntax (KindRep(..), TypeRep(..), ExprRep(..), ArgInfo(..), Arg(..))
 import qualified Agda.Compiler.Fomega.Syntax as F
 
+-- compilation error: Could not find module ‘Agda.Compiler.Fomega.Syntax’ ?
+
 -- | System F omega kinds.
 data Kind
   = KType
@@ -78,9 +80,9 @@ type KindView = F.KindView' Kind
 instance Monad m => KindRep m Kind where
 
   -- kindView :: Monad m => Kind -> m KindView
-  kindView KType         = return $ F.KType
-  kindView KTerm         = return $ F.KTerm
-  kindView (KArrow k k') = return $ F.KArrow k k'
+  kindView KType         = F.KType
+  kindView KTerm         = F.KTerm
+  kindView (KArrow k k') = F.KArrow k k'
 
   kType  = KType
   kTerm  = KTerm
@@ -96,13 +98,13 @@ instance Monad m => TypeRep m Kind Type where
   -- typeView :: Monad m => Type -> m TypeView
   typeView t =
     case t of
-      TVar i ts   -> return $ F.TVar (F.TyVar i) (F.TyArgs ts)
-      TArrow t u  -> return $ F.TArrow t u
-      TForall k t -> return $ F.TForall k t
-      TCon d ts   -> return $ F.TCon d (F.TyArgs ts)
-      TLam t      -> return $ F.TLam t
-      TUnknown    -> return $ F.TUnknown
-      TErased     -> return $ F.TErased
+      TVar i ts   -> F.TVar (F.TyVar i) (F.TyArgs ts)
+      TArrow t u  -> F.TArrow t u
+      TForall k t -> F.TForall k t
+      TCon d ts   -> F.TCon d (F.TyArgs ts)
+      TLam t      -> F.TLam t
+      TUnknown    -> F.TUnknown
+      TErased     -> F.TErased
 
   tVar x ts = TVar (F.theTyVar x) (F.theTyArgs ts)
   tArrow    = TArrow
@@ -122,12 +124,12 @@ instance Monad m => ExprRep m Expr where
   -- exprView :: Expr -> m ExprView
   exprView e =
     case e of
-      FVar i es -> return $ F.FVar (F.Var i) (F.Args es)
-      FLam ai f -> return $ F.FLam ai f
-      FLit l    -> return $ F.FLit l
-      FDef d es -> return $ F.FDef d (F.Args es)
-      FCon c es -> return $ F.FCon c (F.Args es)
-      FCoerce e -> return $ F.FCoerce e
+      FVar i es -> F.FVar (F.Var i) (F.Args es)
+      FLam ai f -> F.FLam ai f
+      FLit l    -> F.FLit l
+      FDef d es -> F.FDef d (F.Args es)
+      FCon c es -> F.FCon c (F.Args es)
+      FCoerce e -> F.FCoerce e
 
   fVar x es = FVar (F.theVar x) (F.theArgs es)
   fLam      = FLam

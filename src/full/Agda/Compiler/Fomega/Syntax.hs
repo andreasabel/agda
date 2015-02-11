@@ -102,7 +102,7 @@ class TypeRep k a | a -> k where
     in case v of
       TArrow a b  -> FTArrow a b
       TForall k f -> FTForall k f
-      _ -> FTNo
+      _           -> FTNo
 
 -- ** Function type view
 
