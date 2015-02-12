@@ -137,12 +137,13 @@ instance (Functor m, Applicative m, Monad m, Precedence p, PrettyM p m (WrapKind
 -- {-# LANGUAGE UndecidableInstances      #-}
 --
 -- Why does GHC-7.8.3 insist on an "Applicative m" constraint here?!
-instance (Applicative m, Precedence p, MonadPrec p m, KindRep m a) => PrettyM p m (WrapKind a) where
-  prettyPrecM (WrapKind a) = prettyPrecM =<< kindView a
+instance (Applicative m, Precedence p, MonadPrec p m, KindRep a) => PrettyM p m (WrapKind a) where
+  prettyPrecM (WrapKind a) = prettyPrecM $ kindView a
+
 
 -- * Types
 
-instance (Functor m, Applicative m, Precedence p, PrettyM p m k, PrettyM p m (WrapType a), MonadName () m, KindRep m k, TypeRep m k a) => PrettyM p m (TypeView' k a) where
+instance (Functor m, Applicative m, Precedence p, PrettyM p m k, PrettyM p m (WrapType a), MonadName () m, KindRep k, TypeRep k a) => PrettyM p m (TypeView' k a) where
   prettyPrecM t = do
     case t of
       TUnknown   -> return $ dUnknown
@@ -183,7 +184,7 @@ prettyAbs :: (Functor m, MonadName () m, PrettyM p m a) => I.Abs a -> m (Maybe N
 prettyAbs (I.Abs   x a) = mapFst Just <$> do bindVar x __IMPOSSIBLE__ $ prettyPrecM a
 prettyAbs (I.NoAbs x a) = (Nothing,) <$> prettyPrecM a
 
-instance (Applicative m, Precedence p, MonadPrec p m, MonadName () m, PrettyM p m k, KindRep m k, TypeRep m k a) => PrettyM p m (WrapType a) where
-  prettyPrecM (WrapType a) = do
-    t <- typeView a
-    prettyPrecM t
+instance (Applicative m, Precedence p, MonadPrec p m, MonadName () m, PrettyM p m k, KindRep k, TypeRep k a) => PrettyM p m (WrapType a) where
+  prettyPrecM (WrapType a) =
+    let t = typeView a
+    in prettyPrecM t
