@@ -79,7 +79,7 @@ data FPrec
   | ArrowDomainPrec
   | ArrowRangePrec Bool -- ^ @True@ means rightmost in expression.
   | FunctionPrec
-  | ArgumentPrec Bool -- ^ @True@ means rightmost in expression.
+  | ArgumentPrec   Bool -- ^ @True@ means rightmost in expression.
 
 -- | Are we in rightmost position in a top or bracketed context?
 
@@ -103,11 +103,11 @@ instance Precedence FPrec where
   precForallDomain _ = TopPrec
   precForallBody   _ = TopPrec
 
-  appBrackets (ArgumentPrec _) = True
-  appBrackets _                = False
+  appBrackets (ArgumentPrec _)   = True
+  appBrackets _                  = False
 
-  lamBrackets    = not . rightmost
-  forallBrackets = not . rightmost
+  lamBrackets                    = not . rightmost
+  forallBrackets                 = not . rightmost
 
   arrowBrackets TopPrec          = False
   arrowBrackets ArrowRangePrec{} = False
@@ -117,15 +117,17 @@ instance Precedence FPrec where
 
 -- | Note: function space in domain @(k1 -> k2) -> k3@
 --   vs. function space in range @k1 -> k2 -> k3@.
-instance (Functor m, Applicative m, Monad m, Precedence p, PrettyM p m (WrapKind a)) => PrettyM p m (KindView' a) where
+instance (Functor m, Applicative m, Monad m, Precedence p,
+          PrettyM p m (WrapKind a))
+          => PrettyM p m (KindView' a) where
   prettyPrecM k =
     case k of
-      KType        -> pure $ dType
-      KTerm        -> pure $ dTerm
+      KType        -> pure dType
+      KTerm        -> pure dTerm
       KArrow k1 k2 -> parensIf arrowBrackets $ do
         fsep <$> sequence
           [ goArrowDomain $ prettyPrecM $ WrapKind k1
-          , pure $ dArrow
+          , pure dArrow
           , goArrowRange  $ prettyPrecM $ WrapKind k2
           ]
 
@@ -137,21 +139,24 @@ instance (Functor m, Applicative m, Monad m, Precedence p, PrettyM p m (WrapKind
 -- {-# LANGUAGE UndecidableInstances      #-}
 --
 -- Why does GHC-7.8.3 insist on an "Applicative m" constraint here?!
-instance (Applicative m, Precedence p, MonadPrec p m, KindRep a) => PrettyM p m (WrapKind a) where
+instance (Applicative m, Precedence p, MonadPrec p m, KindRep a)
+    => PrettyM p m (WrapKind a) where
   prettyPrecM (WrapKind a) = prettyPrecM $ kindView a
 
 
 -- * Types
 
-instance (Functor m, Applicative m, Precedence p, PrettyM p m k, PrettyM p m (WrapType a), MonadName () m, KindRep k, TypeRep k a) => PrettyM p m (TypeView' k a) where
+instance (Functor m, Applicative m, Precedence p, PrettyM p m k,
+          PrettyM p m (WrapType a), MonadName () m, KindRep k, TypeRep k a)
+          => PrettyM p m (TypeView' k a) where
   prettyPrecM t = do
     case t of
-      TUnknown   -> return $ dUnknown
-      TErased    -> return $ dErased
+      TUnknown   -> return dUnknown
+      TErased    -> return dErased
       TArrow a b -> parensIf arrowBrackets $ do
         fsep <$> sequence
           [ goArrowDomain $ prettyPrecM $ WrapType a
-          , pure $ dArrow
+          , pure dArrow
           , goArrowRange  $ prettyPrecM $ WrapType b
           ]
 
@@ -163,7 +168,8 @@ instance (Functor m, Applicative m, Precedence p, PrettyM p m k, PrettyM p m (Wr
 
       TVar i as  -> appParens $ fsep <$> do
         x <- useVar $ DBIndex $ theTyVar i
-        (text x :) <$> do goArgument $ sequence $ map (prettyPrecM . WrapType) $ theTyArgs as
+        (text x :) <$> do goArgument $ sequence
+                            $ map (prettyPrecM . WrapType) $ theTyArgs as
       TLam f      -> lamParens $ do
         (mx, doc) <- goLambdaBody $ prettyAbs (WrapType <$> f)
         let x = fromMaybe "_" mx
@@ -180,11 +186,13 @@ instance (Functor m, Applicative m, Precedence p, PrettyM p m k, PrettyM p m (Wr
       lamParens = parensIf lamBrackets
       allParens = parensIf forallBrackets
 
-prettyAbs :: (Functor m, MonadName () m, PrettyM p m a) => I.Abs a -> m (Maybe Name, Doc)
-prettyAbs (I.Abs   x a) = mapFst Just <$> do bindVar x __IMPOSSIBLE__ $ prettyPrecM a
+prettyAbs :: (Functor m, MonadName () m, PrettyM p m a)
+             => I.Abs a -> m (Maybe Name, Doc)
+prettyAbs (I.Abs   x a) = mapFst Just <$>
+                          do bindVar x __IMPOSSIBLE__ $ prettyPrecM a
 prettyAbs (I.NoAbs x a) = (Nothing,) <$> prettyPrecM a
 
-instance (Applicative m, Precedence p, MonadPrec p m, MonadName () m, PrettyM p m k, KindRep k, TypeRep k a) => PrettyM p m (WrapType a) where
-  prettyPrecM (WrapType a) =
-    let t = typeView a
-    in prettyPrecM t
+instance (Applicative m, Precedence p, MonadPrec p m, MonadName () m,
+          PrettyM p m k, KindRep k, TypeRep k a)
+          => PrettyM p m (WrapType a) where
+  prettyPrecM (WrapType a) = prettyPrecM $ typeView a

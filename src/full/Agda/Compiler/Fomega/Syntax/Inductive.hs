@@ -12,9 +12,9 @@ import Agda.Syntax.Abstract.Name
 import qualified Agda.Syntax.Internal as I
 import Agda.Syntax.Literal
 
-import Agda.Compiler.Fomega.Syntax (KindRep(..), TypeRep(..), ExprRep(..), ArgInfo(..), Arg(..))
+import Agda.Compiler.Fomega.Syntax (KindRep(..), TypeRep(..), ExprRep(..),
+                                    ArgInfo(..), Arg(..))
 import qualified Agda.Compiler.Fomega.Syntax as F
--- compilation error: Could not find module ‘Agda.Compiler.Fomega.Syntax’ ?
 
 -- | System F omega kinds.
 data Kind
@@ -76,27 +76,20 @@ type Args = [Arg Expr]
 
 type KindView = F.KindView' Kind
 
---instance Monad m => KindRep m Kind where
 instance KindRep Kind where
-
-  -- kindView :: Monad m => Kind -> m KindView
   kindView KType         = F.KType
   kindView KTerm         = F.KTerm
   kindView (KArrow k k') = F.KArrow k k'
-
-  kType  = KType
-  kTerm  = KTerm
-  kArrow = KArrow
+  kType                  = KType
+  kTerm                  = KTerm
+  kArrow                 = KArrow
 
 
 -- * Instantiating the abstract interface for types.
 
 type TypeView = F.TypeView' Kind Type
 
---instance Monad m => TypeRep m Kind Type where
 instance TypeRep Kind Type where
-
-  -- typeView :: Monad m => Type -> m TypeView
   typeView t =
     case t of
       TVar i ts   -> F.TVar (F.TyVar i) (F.TyArgs ts)
@@ -120,10 +113,7 @@ instance TypeRep Kind Type where
 
 type ExprView = F.ExprView' Expr
 
---instance Monad m => ExprRep m Expr where
-instance ExprRep Expr where
-    
-  -- exprView :: Expr -> m ExprView
+instance ExprRep Expr where    
   exprView e =
     case e of
       FVar i es -> F.FVar (F.Var i) (F.Args es)

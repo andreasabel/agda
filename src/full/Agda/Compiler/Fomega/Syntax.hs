@@ -163,10 +163,8 @@ newtype Args' a = Args { theArgs :: [Arg a] }
 -- ** Class interface
 
 class ExprRep a where
-
   exprView :: a -> ExprView' a
   -- ^ View @a@ as expression.
-
   fVar :: Var -> Args' a -> a
   -- ^ Construct a neutral expression.
   fLam :: ArgInfo -> I.Abs a -> a

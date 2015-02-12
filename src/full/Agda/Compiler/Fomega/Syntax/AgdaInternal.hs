@@ -85,7 +85,6 @@ type TypeView = TypeView' Kind Type
 
 instance TypeRep Kind Type where
 
-
 #if __GLASGOW_HASKELL__ >= 709
   -- typeView :: Type -> TCM TypeView
   typeView :: Type -> (TypeView' (KindRep_ Type) Type)
@@ -100,9 +99,11 @@ instance TypeRep Kind Type where
       -- TLam is represented by Lam
       I.Lam _ t    -> TLam t
       -- TVar is represented by Var, not using projection eliminations
-      I.Var i es   -> TVar (TyVar i) $ TyArgs $ map unArg $ fromMaybe __IMPOSSIBLE__ $ allApplyElims es
+      I.Var i es   -> TVar (TyVar i) $ TyArgs
+                      $ map unArg $ fromMaybe __IMPOSSIBLE__ $ allApplyElims es
       -- TCon is represented by Def, not using projection eliminations
-      I.Def d es   -> TCon d $ TyArgs $ map unArg $ fromMaybe __IMPOSSIBLE__ $ allApplyElims es
+      I.Def d es   -> TCon d $ TyArgs
+                      $ map unArg $ fromMaybe __IMPOSSIBLE__ $ allApplyElims es
       -- TErased is represented by Set
       I.Sort{}     -> TErased
       -- TUnknown is represented as a string literate
@@ -118,11 +119,10 @@ instance TypeRep Kind Type where
 #if __GLASGOW_HASKELL__ >= 709
   tVar :: TVar -> TyArgs -> Type
 #endif
-  tVar i ts = I.Var (theTyVar i) $ map (Apply . defaultArg) $ theTyArgs ts
-
-  tCon q ts = I.Def q $ map (Apply . defaultArg) $ theTyArgs ts
-  tArrow t t' = I.Pi (defaultDom $ El Inf t) (NoAbs "_" $ El Inf t')
-  tForall k t = I.Pi (defaultDom $ El Inf k) (El Inf <$> t)
+  tVar    i ts = I.Var (theTyVar i) $ map (Apply . defaultArg) $ theTyArgs ts
+  tCon    q ts = I.Def q $ map (Apply . defaultArg) $ theTyArgs ts
+  tArrow  t t' = I.Pi (defaultDom $ El Inf t) (NoAbs "_" $ El Inf t')
+  tForall k t  = I.Pi (defaultDom $ El Inf k) (El Inf <$> t)
 
 #if __GLASGOW_HASKELL__ >= 709
   tLam :: I.Abs Type -> Type
@@ -132,9 +132,8 @@ instance TypeRep Kind Type where
 #if __GLASGOW_HASKELL__ >= 709
   tErased :: Type
 #endif
-  tErased = I.Sort $ mkType 0
-
-  tUnknown = I.Lit $ LitString empty "NotFomegaType"
+  tErased  = I.Sort $ mkType 0
+  tUnknown = I.Lit  $ LitString empty "NotFomegaType"
 
 
 -- -- * Expressions
