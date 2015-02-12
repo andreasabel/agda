@@ -38,20 +38,19 @@ type KindView = KindView' Kind
 
 -- | Kinds represented by terms of Agda's internal language of values,
 --   using weak head evaluation on the type checking monad @TCM@.
-instance KindRep TCM Kind where
+instance KindRep Kind where
 
 #if __GLASGOW_HASKELL__ >= 709
-  kindView :: Kind -> TCM KindView
+  kindView :: Kind -> KindView
 #endif
-  kindView t = do
-    t <- reduce t
+  kindView t =
     case ignoreSharing t of
       -- KArrow is represented by I.Pi
-      I.Pi dom b   -> return $ KArrow (unEl $ unDom dom) (unEl $ absBody b)
+      I.Pi dom b   -> KArrow (unEl $ unDom dom) (unEl $ absBody b)
       -- KTerm is represented by I.Level (slight abuse)
-      I.Level{}    -> return $ KTerm
+      I.Level{}    -> KTerm
       -- KType is represented by sort Set
-      I.Sort{}     -> return $ KType
+      I.Sort{}     -> KType
       -- The rest of Agda syntax is not used to represent kinds:
       I.Var{}      -> __IMPOSSIBLE__
       I.Def{}      -> __IMPOSSIBLE__
@@ -84,31 +83,30 @@ type Type     = I.Term
 type TyArgs   = TyArgs' Type
 type TypeView = TypeView' Kind Type
 
-instance TypeRep TCM Kind Type where
+instance TypeRep Kind Type where
 
 
 #if __GLASGOW_HASKELL__ >= 709
   -- typeView :: Type -> TCM TypeView
-  typeView :: Type -> TCM (TypeView' (KindRep_ Type) Type)
+  typeView :: Type -> (TypeView' (KindRep_ Type) Type)
 #endif
-  typeView t = do
-    t <- reduce t
+  typeView t =
     case ignoreSharing t of
       -- Dependent function types are used to represent TForall,
       -- nondependent ones represent TArrow.
       I.Pi dom b   -> case b of
-        Abs{}      -> return $ TForall (unEl $ unDom dom) (unEl <$> b)
-        NoAbs _ b  -> return $ TArrow (unEl $ unDom dom) (unEl b)
+        Abs{}      -> TForall (unEl $ unDom dom) (unEl <$> b)
+        NoAbs _ b  -> TArrow (unEl $ unDom dom) (unEl b)
       -- TLam is represented by Lam
-      I.Lam _ t    -> return $ TLam t
+      I.Lam _ t    -> TLam t
       -- TVar is represented by Var, not using projection eliminations
-      I.Var i es   -> return $ TVar (TyVar i) $ TyArgs $ map unArg $ fromMaybe __IMPOSSIBLE__ $ allApplyElims es
+      I.Var i es   -> TVar (TyVar i) $ TyArgs $ map unArg $ fromMaybe __IMPOSSIBLE__ $ allApplyElims es
       -- TCon is represented by Def, not using projection eliminations
-      I.Def d es   -> return $ TCon d $ TyArgs $ map unArg $ fromMaybe __IMPOSSIBLE__ $ allApplyElims es
+      I.Def d es   -> TCon d $ TyArgs $ map unArg $ fromMaybe __IMPOSSIBLE__ $ allApplyElims es
       -- TErased is represented by Set
-      I.Sort{}     -> return $ TErased
+      I.Sort{}     -> TErased
       -- TUnknown is represented as a string literate
-      I.Lit{}      -> return $ TUnknown
+      I.Lit{}      -> TUnknown
       -- The rest of Agda syntax is not used:
       I.Con{}      -> __IMPOSSIBLE__
       I.ExtLam{}   -> __IMPOSSIBLE__
