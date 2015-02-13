@@ -252,6 +252,7 @@ instance ExtractType Term where
       dummy = I.Lit $ LitString empty $
         "VariableSubstitutedDuringTypeExtraction"
 
+-- similar to extractArgs
 extractTypeArgs = undefined
 
 instance ExtractType I.Type where
@@ -260,6 +261,8 @@ instance ExtractType I.Type where
 instance ExtractType a => ExtractType (Dom a) where
   extractType = extractType . unDom
 
+-- similar to extractTermCheck
+extractTypeAt :: I.Term -> Kind -> Extract Type
 extractTypeAt = undefined
 
 
