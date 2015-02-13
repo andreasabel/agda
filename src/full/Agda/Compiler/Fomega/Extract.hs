@@ -378,7 +378,8 @@ Inferring application:
 class ExtractTerm a where
   extractTermCheck :: a -> Type -> Extract Expr
   extractTermInfer :: a -> Extract (Expr, Type)
-  extractArgs      :: Type -> [I.Elim' a] -> Extract ([Arg Expr], Type)
+  extractArgs      :: Type -> [Args' a] -> Extract ([Arg Expr], Type)
+  extractElims     :: Type -> [I.Elim' a] -> Extract ([Elim Expr], Type)
 
 instance ExtractTerm Term where
   extractTermCheck v a = do
@@ -414,11 +415,11 @@ instance ExtractTerm Term where
     case ignoreSharing v of
       I.Var i es -> do
         t <- typeOfBV i
-        (es', t') <- extractArgs (unEl t) es
-        return (fVar (Var i) (Args es'), t')
+        (es', t') <- extractElims (unEl t) es
+        return (fVar (Var i) (Elims es'), t')
       _ -> __IMPOSSIBLE__
 
-  extractArgs t es = do
+  extractElims t es = do
     case es of
       [] -> return ([], t)
       (I.Proj{}  : _) -> __IMPOSSIBLE__
@@ -426,11 +427,14 @@ instance ExtractTerm Term where
          case funTypeView t of
            FTArrow a b -> do
              e'        <- extractTermCheck v a
-             (es', t') <- extractArgs b es
-             return (Arg TermArg e' : es', t')
+             (es', t') <- extractElims b es
+             return (Apply (Arg TermArg e') : es', t')
            FTForall k f -> do
              g <- extractTypeAt v k
-             (es', t') <- extractArgs (absApp f g) es
-             return (Arg TypeArg g : es', t')
-           FTEraseArg a -> extractArgs a es
-           FTNo -> __IMPOSSIBLE__
+             (es', t') <- extractElims (absApp f g) es
+             return (Apply (Arg TypeArg g : es'), t')
+           FTEraseArg a -> extractElims a es
+           FTNo -> do
+             (e, t) <- extractTermInfer v
+             (es, t') <- extractElims tUnknown es
+             return ([Coerce, Apply (Arg TermArg e)] ++ es, t')

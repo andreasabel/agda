@@ -124,13 +124,13 @@ newtype WrapType a = WrapType { wrappedType :: a }
 -- | System Fω expressions in β-normal form.
 --   Note: 'Agda.Syntax.Internal' has already only β-normal forms.
 data ExprView' a
-  = FVar {-# UNPACK #-} !Var (Args' a)
+  = FVar {-# UNPACK #-} !Var (Elims a)
     -- ^ Variables @x es@.
   | FLam ArgInfo (I.Abs a)
     -- ^ Term abstraction @λx.e@ or type abstraction @ΛX.e@.
   | FLit Literal
     -- ^ Constant numbers, strings, chars etc.
-  | FDef QName (Args' a)
+  | FDef QName (Elims a)
     -- ^ Defined function @f es@.
   | FCon I.ConHead (Args' a)
     -- ^ Data constructor @c es@.
@@ -160,18 +160,28 @@ data Arg a = Arg
 newtype Args' a = Args { theArgs :: [Arg a] }
   deriving (Functor, Foldable, Traversable)
 
+-- | Eliminations are either arguments or coercions.
+data Elim a
+  = Coerce   -- ^ We need to coerce before we can apply to the next argument.
+  | Apply a  -- ^ The next argument.
+  deriving (Eq, Ord, Show, Functor, Foldable, Traversable)
+
+-- | List of eliminations.
+newtype Elims a = Elims { theElims :: [Elim a] }
+  deriving (Functor, Foldable, Traversable)
+
 -- ** Class interface
 
 class ExprRep a where
   exprView :: a -> ExprView' a
   -- ^ View @a@ as expression.
-  fVar :: Var -> Args' a -> a
+  fVar :: Var -> Elims a -> a
   -- ^ Construct a neutral expression.
   fLam :: ArgInfo -> I.Abs a -> a
   -- ^ Construct a lambda abstraction.
   fLit :: Literal -> a
   -- ^ Construct a literal expression.
-  fDef :: QName -> Args' a -> a
+  fDef :: QName -> Elims a -> a
   -- ^ Construct a definition application.
   fCon :: I.ConHead -> Args' a -> a
   -- ^ Construct a constructor application.
