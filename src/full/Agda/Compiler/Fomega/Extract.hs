@@ -111,12 +111,14 @@ import Control.Monad
 import Control.Monad.Trans
 import Control.Monad.Trans.Maybe
 
-import Agda.Syntax.Common hiding (Dom)
+import Agda.Syntax.Common hiding (Dom, Arg, ArgInfo)
+import qualified Agda.Syntax.Common as Common
 import Agda.Syntax.Literal
 -- import Agda.Syntax.Internal (Term(..))
-import Agda.Syntax.Internal hiding (Type)
+import Agda.Syntax.Internal hiding (Type, Arg, ArgInfo, Var)
 import qualified Agda.Syntax.Internal as I
 
+import Agda.TypeChecking.Conversion
 import Agda.TypeChecking.Datatypes
 import Agda.TypeChecking.Monad
 import Agda.TypeChecking.Reduce
@@ -128,6 +130,7 @@ import Agda.Compiler.Fomega.Syntax.AgdaInternal (Kind, Type, Expr)
 
 import Agda.Utils.Functor
 import Agda.Utils.Maybe
+import Agda.Utils.Monad
 import Agda.Utils.Null
 
 #include "undefined.h"
@@ -257,6 +260,7 @@ instance ExtractType I.Type where
 instance ExtractType a => ExtractType (Dom a) where
   extractType = extractType . unDom
 
+extractTypeAt = undefined
 
 
 -- * Terms
@@ -374,6 +378,7 @@ Inferring application:
 class ExtractTerm a where
   extractTermCheck :: a -> Type -> Extract Expr
   extractTermInfer :: a -> Extract (Expr, Type)
+  extractArgs      :: Type -> [I.Elim' a] -> Extract ([Arg Expr], Type)
 
 instance ExtractTerm Term where
   extractTermCheck v a = do
@@ -398,8 +403,34 @@ instance ExtractTerm Term where
              else fLam TermArg . Abs x <$> do
                 underAbs tUnknown b $ \ v -> do
                   extractTermCheck v tUnknown
-      _ -> __IMPOSSIBLE__
+      _ -> do
+        (e, t) <- extractTermInfer v
+        ifM (tryConversion $ compareTerm CmpLeq topSort t a) (return e) $ {- else -}
+          return $ fCoerce e
     where
       underAbs t = underAbstraction (defaultDom (El I.Inf t))
 
-  extractTermInfer v = __IMPOSSIBLE__
+  extractTermInfer v = do
+    case ignoreSharing v of
+      I.Var i es -> do
+        t <- typeOfBV i
+        (es', t') <- extractArgs (unEl t) es
+        return (fVar (Var i) (Args es'), t')
+      _ -> __IMPOSSIBLE__
+
+  extractArgs t es = do
+    case es of
+      [] -> return ([], t)
+      (I.Proj{}  : _) -> __IMPOSSIBLE__
+      (I.Apply (Common.Arg ai v) : es) -> do
+         case funTypeView t of
+           FTArrow a b -> do
+             e'        <- extractTermCheck v a
+             (es', t') <- extractArgs b es
+             return (Arg TermArg e' : es', t')
+           FTForall k f -> do
+             g <- extractTypeAt v k
+             (es', t') <- extractArgs (absApp f g) es
+             return (Arg TypeArg g : es', t')
+           FTEraseArg a -> extractArgs a es
+           FTNo -> __IMPOSSIBLE__
