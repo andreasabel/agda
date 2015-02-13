@@ -113,7 +113,7 @@ instance TypeRep Kind Type where
 
 type ExprView = F.ExprView' Expr
 
-instance ExprRep Expr where    
+instance ExprRep Expr where
   exprView e =
     case e of
       FVar i es -> F.FVar (F.Var i) (F.Args es)

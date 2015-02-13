@@ -11,10 +11,11 @@
 
 module Agda.Compiler.Fomega.Syntax.AgdaInternal where
 
-import Agda.Syntax.Common
+import Agda.Syntax.Common hiding (Arg, ArgInfo)
+import qualified Agda.Syntax.Common as Common
 import Agda.Syntax.Literal
 -- import Agda.Syntax.Internal (Term(..))
-import Agda.Syntax.Internal hiding (Type)
+import Agda.Syntax.Internal hiding (Type, Var, Arg, ArgInfo)
 import qualified Agda.Syntax.Internal as I
 
 import Agda.TypeChecking.Monad
@@ -138,12 +139,46 @@ instance TypeRep Kind Type where
 
 -- -- * Expressions
 
--- type Expr = Term
--- type ExprView = ExprView' Expr
--- type Args = Args' Expr
+type Expr = Term
+type ExprView = ExprView' Expr
+type Args = Args' Expr
 
--- instance ExprRep TCM Expr where
+-- TypeArg is represented as Irrelevant
+-- TermArg as Relevant
 
---   var i args = Var i $ map (Apply args
+repArgInfo :: ArgInfo -> I.ArgInfo
+repArgInfo TermArg = defaultArgInfo
+repArgInfo TypeArg = setRelevance Irrelevant defaultArgInfo
 
--- -}
+unrepArgInfo :: I.ArgInfo -> ArgInfo
+unrepArgInfo ai = if getRelevance ai == Irrelevant then TypeArg else TermArg
+
+repArg :: Arg a -> I.Arg a
+repArg (Arg ai v) = Common.Arg (repArgInfo ai) v
+
+unrepElim :: I.Elim' a -> Arg a
+unrepElim Proj{} = __IMPOSSIBLE__
+unrepElim (Apply a) = unrepArg a
+
+unrepArg :: I.Arg a -> Arg a
+unrepArg (Common.Arg ai v) = Arg (unrepArgInfo ai) v where
+
+instance ExprRep Expr where
+  -- Representation of Fomega expressions in Agda terms
+  fVar (Var i) (Args vs) = I.Var i $ map (Apply . repArg) vs
+  fLam ai b              = I.Lam (repArgInfo ai) b
+  fLit l                 = I.Lit l
+  fDef f (Args vs)       = I.Def f $ map (Apply . repArg) vs
+  fCon c (Args vs)       = I.Con c $ map repArg vs
+  fCoerce v              = I.Level $ I.Max [I.Plus 0 $ UnreducedLevel v]
+
+  exprView v =
+    case ignoreSharing v of
+      I.Var i es -> FVar (Var i) $ Args $ map unrepElim es
+      I.Lam ai b -> FLam (unrepArgInfo ai) b
+      I.Lit l    -> FLit l
+      I.Def f es -> FDef f $ Args $ map unrepElim es
+      I.Con c vs -> FCon c $ Args $ map unrepArg vs
+      I.Level (I.Max [I.Plus 0 (I.UnreducedLevel v)]) -> FCoerce v
+      _          -> __IMPOSSIBLE__
+
