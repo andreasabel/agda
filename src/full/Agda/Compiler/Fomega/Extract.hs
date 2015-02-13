@@ -123,8 +123,8 @@ import Agda.TypeChecking.Reduce
 import Agda.TypeChecking.Substitute
 
 import Agda.Compiler.Fomega.Syntax
-import Agda.Compiler.Fomega.Syntax.AgdaInternal (Kind, Type)
-import Agda.Compiler.Fomega.Syntax.Inductive (Expr)
+import Agda.Compiler.Fomega.Syntax.AgdaInternal (Kind, Type, Expr)
+-- import Agda.Compiler.Fomega.Syntax.Inductive (Expr)
 
 import Agda.Utils.Functor
 import Agda.Utils.Maybe
@@ -178,7 +178,7 @@ class ExtractKind a where
 
 instance ExtractKind I.Term where
   extractKind' v = do
-    v <- reduce v
+    v <- liftTCM $ reduce v
     case ignoreSharing v of
       I.Sort{}   -> pure $ kType
       I.Pi dom b -> kArrow <$> lift (extractKindDom dom)
@@ -218,30 +218,32 @@ instance ExtractType Term where
       I.Var i es    -> do
         caseMaybe (allApplyElims es) (return tUnknown) $ \ args -> do
         t <- typeOfBV i
-        tVar i <$> extractTypeArgs t args
+        tVar (TyVar i) <$> extractTypeArgs t args
       -- Data types and stuck defined types:
       I.Def d es -> do
-        caseMaybeM (isDataOrRecord d) (return tUnknown) $ \ _ -> do
+        caseMaybeM (isDataOrRecordType d) (return tUnknown) $ \ _ -> do
         -- @d@ is data or record constructor:
-        t <- defType <$> getConstInfo
+        t <- defType <$> getConstInfo d
         let args = fromMaybe __IMPOSSIBLE__ $ allApplyElims es
         tCon d <$> do extractTypeArgs t args
       -- Function types and polymorphic types
       I.Pi dom b -> do
+        let x = absName b
         mk <- extractKind dom
         case mk of
           -- If @dom@ is a kind @κ@, we return a polymorphic type @∀X:κ.T@.
-          Just k -> tForall k <$> do
-            addContext dom $
-              mkAbs (absName b) <$> extractType (absBody b)
+          Just k -> tForall k . mkAbs x <$> do
+            addContext (x, dom) $  -- OR: (x, defaultDom mk) !?
+              extractType (absBody b)
           -- Otherwise, a function type @U → T@.
           Nothing -> tArrow <$> extractType dom
                             <*> extractType (absApp b dummy)
       -- Universes and Level carry no runtime content:
-      I.Sort{}   -> tErased
-      I.Level{}  -> tErased
+      I.Sort{}   -> return $ tErased
+      I.Level{}  -> return $ tErased
       -- A meta variable can stand for anything.
-      I.MetaV{}  -> tUnknown
+      I.MetaV{}  -> return $ tUnknown
+      I.DontCare v -> return $ tErased
       I.Shared{} -> __IMPOSSIBLE__
     where
       dummy = I.Lit $ LitString empty $
@@ -378,26 +380,26 @@ instance ExtractTerm Term where
     case ignoreSharing v of
       Lam ai b -> do
         let x = absName b
-        ft <- funTypeView a
-        case ft of
-          FTArrow t u -> do
-            underAbstraction t b $ \ v -> do
-              e <- extractTermCheck v u
-              return $ fLam TermArg $ mkAbs x e
-          FTForall k f -> do
-            underAbstraction k b $ \ v -> do
-              e <- extractTermCheck v (absBody f)
-              return $ fLam TypeArg $ mkAbs x e
-          FTEraseArg u -> do
-            underAbstraction tErased b $ \ v -> do
-              e <- extractTermCheck v u
-              return $ strengthen __IMPOSSIBLE__ e
+        case funTypeView a of
+          FTArrow t u -> fLam TermArg . Abs x <$> do
+            underAbs t b $ \ v -> do
+              extractTermCheck v u
+          FTForall k f -> fLam TypeArg . Abs x <$> do
+            underAbs k b $ \ v -> do
+              extractTermCheck v (absBody f)
+          FTEraseArg u -> strengthen __IMPOSSIBLE__ <$> do
+            underAbs tErased b $ \ v -> do
+              extractTermCheck v u
           FTNo -> fCoerce <$> do
-            if getRelevance ai `elem` [Irrelevant, Unused, Forced] then do
-                underAbstraction tErased b $ \ v -> do
-                  e <- extractTermCheck v tUnknown
-                  return $ strengthen __IMPOSSIBLE__ e
-             else do
-                underAbstraction tUnknown b $ \ v -> do
-                  e <- extractTermCheck v tUnknown
-                  return $ fLam TermArg $ mkAbs x e
+            if getRelevance ai `elem` [Irrelevant, UnusedArg, Forced]
+             then strengthen __IMPOSSIBLE__ <$> do
+                underAbs tErased b $ \ v -> do
+                  extractTermCheck v tUnknown
+             else fLam TermArg . Abs x <$> do
+                underAbs tUnknown b $ \ v -> do
+                  extractTermCheck v tUnknown
+      _ -> __IMPOSSIBLE__
+    where
+      underAbs t = underAbstraction (defaultDom (El I.Inf t))
+
+  extractTermInfer v = __IMPOSSIBLE__
