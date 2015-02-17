@@ -120,8 +120,8 @@ instance TypeRep Kind Type where
 #if __GLASGOW_HASKELL__ >= 709
   tVar :: TVar -> TyArgs -> Type
 #endif
-  tVar    i ts = I.Var (theTyVar i) $ map (Apply . defaultArg) $ theTyArgs ts
-  tCon    q ts = I.Def q $ map (Apply . defaultArg) $ theTyArgs ts
+  tVar    i ts = I.Var (theTyVar i) $ map (I.Apply . defaultArg) $ theTyArgs ts
+  tCon    q ts = I.Def q $ map (I.Apply . defaultArg) $ theTyArgs ts
   tArrow  t t' = I.Pi (defaultDom $ El Inf t) (NoAbs "_" $ El Inf t')
   tForall k t  = I.Pi (defaultDom $ El Inf k) (El Inf <$> t)
 
@@ -157,8 +157,8 @@ repArg :: Arg a -> I.Arg a
 repArg (Arg ai v) = Common.Arg (repArgInfo ai) v
 
 unrepElim :: I.Elim' a -> Arg a
-unrepElim Proj{} = __IMPOSSIBLE__
-unrepElim (Apply a) = unrepArg a
+unrepElim Proj{}      = __IMPOSSIBLE__
+unrepElim (I.Apply a) = unrepArg a
 
 unrepArg :: I.Arg a -> Arg a
 unrepArg (Common.Arg ai v) = Arg (unrepArgInfo ai) v where
