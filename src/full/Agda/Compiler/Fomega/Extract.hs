@@ -263,7 +263,39 @@ instance ExtractType a => ExtractType (Dom a) where
 
 -- similar to extractTermCheck
 extractTypeAt :: I.Term -> Kind -> Extract Type
-extractTypeAt = undefined
+extractTypeAt t a = do
+  case ignoreSharing t of
+    Lam ai b -> do
+      let x = absName b
+      case funTypeView a of
+        FTArrow t u  -> fLam TermArg . Abs x <$>
+                          underAbs t b $ \ v -> extractTypeAt v u
+                                    
+        FTForall k f -> fLam TypeArg . Abs x <$>
+                          underAbs k b $ \ v -> extractTypeAt v (absBody f)
+        
+        FTEraseArg u -> strengthen __IMPOSSIBLE__ <$>
+                          underAbs tErased b $ \ v -> extractTypeAt v u
+                
+        FTNo         -> fCoerce <$>
+                    if getRelevance ai `elem` [Irrelevant, UnusedArg, Forced]
+                      then strengthen __IMPOSSIBLE__ <$>
+                        underAbs tErased b $ \ v -> extractTypeAt v tUnknown
+                      else fLam TermArg . Abs x <$>
+                        underAbs tUnknown b $ \ v -> extractTypeAt v tUnknown
+                
+        _            ->  do
+            (e, t) <- extractTypeInfer t
+            ifM (tryConversion $ compareTerm CmpLeq topSort t a) (return e)
+              $ {- else -} return $ fCoerce e
+   
+  where underAbs t = underAbstraction (defaultDom (El I.Inf t))
+
+-- TODO:
+extractTypeInfer = undefined
+
+
+
 
 
 -- * Terms
@@ -382,7 +414,8 @@ class ExtractTerm a where
   extractTermCheck :: a -> Type -> Extract Expr
   extractTermInfer :: a -> Extract (Expr, Type)
   extractArgs      :: Type -> [Args' a] -> Extract ([Arg Expr], Type)
-  extractElims     :: Type -> [I.Elim' a] -> Extract ([Elim Expr], Type)
+  extractElims     :: Type -> [I.Elim' a] -> Extract ([I.Elim' Expr], Type)
+
 
 instance ExtractTerm Term where
   extractTermCheck v a = do
@@ -411,6 +444,7 @@ instance ExtractTerm Term where
         (e, t) <- extractTermInfer v
         ifM (tryConversion $ compareTerm CmpLeq topSort t a) (return e) $ {- else -}
           return $ fCoerce e
+
     where
       underAbs t = underAbstraction (defaultDom (El I.Inf t))
 
@@ -431,13 +465,13 @@ instance ExtractTerm Term where
            FTArrow a b -> do
              e'        <- extractTermCheck v a
              (es', t') <- extractElims b es
-             return (Apply (Arg TermArg e') : es', t')
+             return (I.Apply (Arg TermArg e') : es', t')
            FTForall k f -> do
              g <- extractTypeAt v k
              (es', t') <- extractElims (absApp f g) es
-             return (Apply (Arg TypeArg g : es'), t')
+             return (I.Apply (Arg TypeArg g : es'), t')
            FTEraseArg a -> extractElims a es
            FTNo -> do
              (e, t) <- extractTermInfer v
              (es, t') <- extractElims tUnknown es
-             return ([Coerce, Apply (Arg TermArg e)] ++ es, t')
+             return ([Coerce, I.Apply (Arg TermArg e)] ++ es, t')
