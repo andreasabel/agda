@@ -57,7 +57,6 @@ instance KindRep Kind where
       I.Def{}      -> __IMPOSSIBLE__
       I.Con{}      -> __IMPOSSIBLE__
       I.Lam{}      -> __IMPOSSIBLE__
-      I.ExtLam{}   -> __IMPOSSIBLE__
       I.Lit{}      -> __IMPOSSIBLE__
       I.MetaV{}    -> __IMPOSSIBLE__
       I.DontCare{} -> __IMPOSSIBLE__
@@ -111,7 +110,6 @@ instance TypeRep Kind Type where
       I.Lit{}      -> TUnknown
       -- The rest of Agda syntax is not used:
       I.Con{}      -> __IMPOSSIBLE__
-      I.ExtLam{}   -> __IMPOSSIBLE__
       I.Level{}    -> __IMPOSSIBLE__
       I.MetaV{}    -> __IMPOSSIBLE__
       I.DontCare{} -> __IMPOSSIBLE__

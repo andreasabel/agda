@@ -215,7 +215,6 @@ instance ExtractType Term where
     case ignoreSharing v of
       -- The following are not types:
       I.Lam{}    -> __IMPOSSIBLE__
-      I.ExtLam{} -> __IMPOSSIBLE__
       I.Lit{}    -> __IMPOSSIBLE__
       I.Con{}    -> __IMPOSSIBLE__
       -- Neutral types:
