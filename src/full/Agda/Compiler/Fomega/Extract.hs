@@ -124,7 +124,7 @@ import Agda.TypeChecking.Monad
 import Agda.TypeChecking.Reduce
 import Agda.TypeChecking.Substitute
 
-import Agda.Compiler.Fomega.Syntax
+import Agda.Compiler.Fomega.Syntax as F
 import Agda.Compiler.Fomega.Syntax.AgdaInternal (Kind, Type, Expr)
 -- import Agda.Compiler.Fomega.Syntax.Inductive (Expr)
 
@@ -401,8 +401,10 @@ Inferring application:
 class ExtractTerm a where
   extractTermCheck :: a -> Type -> Extract Expr
   extractTermInfer :: a -> Extract (Expr, Type)
-  extractArgs      :: Type -> [Args' a] -> Extract ([Arg Expr], Type)
-  extractElims     :: Type -> [I.Elim' a] -> Extract ([Agda.Compiler.Fomega.Syntax.Elim Expr], Type)
+  extractArg       :: Type -> I.Arg a
+                   -> (Type -> [F.Elim (F.Arg Expr)] -> Extract a) -> Extract a
+  extractArgs      :: Type -> [I.Arg a] -> Extract ([Arg Expr], Type)
+  extractElims     :: Type -> [I.Elim' a] -> Extract ([F.Elim (F.Arg Expr)], Type)
 
 
 instance ExtractTerm Term where
@@ -442,8 +444,57 @@ instance ExtractTerm Term where
         t <- typeOfBV i
         (es', t') <- extractElims (unEl t) es
         return (fVar (Var i) (Elims es'), t')
+      I.Def f es -> do
+        t <- typeOfConst f
+        (es', t') <- extractElims (unEl t) es
+        return (fDef f (Elims es'), t')
+      I.Con c vs -> do
+        let f = conName c
+        t <- typeOfConst f
+        (as, t') <- extractArgs (unEl t) vs
+        return (fCon f (Argss as), t')
       _ -> __IMPOSSIBLE__
 
+
+  extractArg canFTNo t (Common.Arg ai v) ret = do
+    case funTypeView t of
+
+      FTArrow a b -> do
+        e <- extractTermCheck v a
+        ret b [ F.Apply $ Arg TermArg e ]
+
+      FTForall k f -> do
+        g <- extractTypeAt v k
+        ret (absApp f g) [ F.Apply $ Arg TypeArg g ]
+
+      FTEraseArg a -> ret a []
+
+      FTNo -> do
+        (e, _t) <- extractTermInfer v
+        ret tUnknown [Coerce, F.Apply (Arg TermArg e)]
+
+  extractElims t es = do
+    case es of
+      []                 -> return ([], t)
+      (I.Proj{}  : _)    -> __IMPOSSIBLE__
+      (I.Apply arg : es) -> extractArg t arg $ \ t0 es0 -> do
+         (es', t') <- extractElims t0 es
+         return (es0 ++ es', t')
+
+  extractArgs t args = do
+    case args of
+      []         -> return ([], t)
+      (arg : as) -> extractArg t arg $ \ t0 es0 -> do
+         -- Constructor types are always function types, so
+         -- no coercions possible.
+         let as0 = map elimToArg es0
+         (as', t') <- extractArgs t0 as
+         return (as0 ++ as', t')
+
+elimToArg (F.Coerce{}) = __IMPOSSIBLE__
+elimToArg (F.Apply a)  = a
+
+{-
   extractElims t es = do
     case es of
       [] -> return ([], t)
@@ -463,6 +514,6 @@ instance ExtractTerm Term where
              (e, t) <- extractTermInfer v
              (es, t') <- extractElims tUnknown es
              return ([Coerce, I.Apply (Arg TermArg e)] ++ es, t')
-
+-}
 
 -- -}
