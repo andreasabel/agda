@@ -7,8 +7,10 @@
 -}
 module Agda.Syntax.Fixity where
 
+import Prelude hiding (null)
+
 import Data.Foldable
-import Data.List as List
+import Data.List as List hiding (null)
 import Data.Traversable
 import Data.Typeable (Typeable)
 
@@ -18,6 +20,7 @@ import Agda.Syntax.Concrete.Name
 import Agda.Syntax.Notation
 
 import Agda.Utils.List
+import Agda.Utils.Null
 
 -- * Notation coupled with 'Fixity'
 
@@ -28,6 +31,9 @@ data Fixity' = Fixity'
     , theNotation :: Notation
     }
   deriving (Typeable, Show, Eq)
+
+instance Null Fixity' where
+  empty = Fixity' empty empty
 
 -- | Decorating something with @Fixity'@.
 data ThingWithFixity x = ThingWithFixity x Fixity'
@@ -130,6 +136,8 @@ noFixity = NonAssoc noRange (negate 666)
   -- The divine is not the negation of evil.
   -- Evil is only the absense of the good and divine.
 
+instance Null Fixity where
+  empty = noFixity
 
 -- * Precendence
 

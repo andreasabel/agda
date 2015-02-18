@@ -9,12 +9,14 @@
 -}
 module Agda.Syntax.Concrete.Name where
 
+import Prelude hiding (null)
+
 import Control.DeepSeq
-import Control.Applicative
+import Control.Applicative hiding (empty)
 
 import Data.ByteString.Char8 (ByteString)
 import qualified Data.ByteString.Char8 as ByteString
-import Data.List
+import Data.List (intercalate)
 import Data.Typeable (Typeable)
 
 import System.FilePath
@@ -23,7 +25,9 @@ import Test.QuickCheck
 
 import Agda.Syntax.Common
 import Agda.Syntax.Position
+
 import Agda.Utils.FileName
+import Agda.Utils.Null
 import Agda.Utils.Pretty
 
 #include "undefined.h"
@@ -49,6 +53,11 @@ instance Underscore Name where
   isUnderscore NoName{}        = True
   isUnderscore (Name _ [Id x]) = isUnderscore x
   isUnderscore _               = False
+
+instance Null Name where
+  empty = NoName empty empty
+  null (NoName r x) = null r && null x
+  null Name{}       = False
 
 -- | Mixfix identifiers are composed of words and holes,
 --   e.g. @_+_@ or @if_then_else_@ or @[_/_]@.

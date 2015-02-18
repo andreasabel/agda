@@ -15,12 +15,14 @@ module Agda.Syntax.Abstract.Name
   , IsNoName(..)
   ) where
 
+import Prelude hiding (null)
+
 import Control.Monad.State
 
 import Data.Foldable (Foldable)
 import Data.Traversable (Traversable)
 import Data.Typeable (Typeable)
-import Data.List
+import Data.List hiding (null)
 import Data.Function
 import Data.Hashable
 
@@ -30,7 +32,7 @@ import Agda.Syntax.Fixity
 import Agda.Syntax.Concrete.Name (IsNoName(..))
 import qualified Agda.Syntax.Concrete.Name as C
 
--- import Agda.Utils.Function
+import Agda.Utils.Null
 import Agda.Utils.Pretty
 import Agda.Utils.Size
 import Agda.Utils.Suffix
@@ -71,14 +73,14 @@ data QNamed a = QNamed
 -- The 'SetRange' instance for module names sets all individual ranges
 -- to the given one.
 newtype ModuleName = MName { mnameToList :: [Name] }
-  deriving (Eq, Ord, Typeable)
+  deriving (Eq, Ord, Typeable, Null)
 
 -- | Ambiguous qualified names. Used for overloaded constructors.
 --
 -- Invariant: All the names in the list must have the same concrete,
 -- unqualified name.  (This implies that they all have the same 'Range').
 newtype AmbiguousQName = AmbQ { unAmbQ :: [QName] }
-  deriving (Typeable, Show, Eq)
+  deriving (Typeable, Show, Eq, Null)
 
 -- | A module is anonymous if the qualification path ends in an underscore.
 isAnonymousModuleName :: ModuleName -> Bool
@@ -249,6 +251,16 @@ instance Hashable QName where
 -- | An abstract name is empty if its concrete name is empty.
 instance IsNoName Name where
   isNoName = isNoName . nameConcrete
+
+------------------------------------------------------------------------
+-- * Null instances (for names we do not care)
+------------------------------------------------------------------------
+
+instance Null Name where
+  empty = Name empty empty empty empty
+
+instance Null QName where
+  empty = QName empty empty
 
 ------------------------------------------------------------------------
 -- * Show instances

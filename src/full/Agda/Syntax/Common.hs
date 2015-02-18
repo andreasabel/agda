@@ -26,6 +26,7 @@ import Test.QuickCheck
 import Agda.Syntax.Position
 
 import Agda.Utils.Functor
+import Agda.Utils.Null
 import Agda.Utils.Pretty
 import Agda.Utils.Size
 
@@ -630,6 +631,10 @@ instance Hashable NameId where
   {-# INLINE hashWithSalt #-}
   hashWithSalt salt (NameId n m) = hashWithSalt salt (n, m)
 
+instance Null NameId where
+  empty = NameId 0 0
+  null (NameId x y) = x == 0 && y == 0
+
 newtype Constr a = Constr a
 
 ---------------------------------------------------------------------------
@@ -665,4 +670,3 @@ data TerminationCheck m
 instance KillRange m => KillRange (TerminationCheck m) where
   killRange (TerminationMeasure _ m) = TerminationMeasure noRange (killRange m)
   killRange t                        = t
-
