@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -fno-warn-missing-signatures #-}
+
 {-# LANGUAGE RecursiveDo #-}
 
 module Agda.Utils.NameContext.Examples where
