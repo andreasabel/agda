@@ -206,7 +206,8 @@ instance ExtractKind a => ExtractKind (Dom a) where
 --   @(X : Set) -> X@ is extracted to @∀ X:⋆. X@.
 --   @(n : ℕ) → Vec X n@ is extracted to @ℕ → Vec X ()@.
 class ExtractType a where
-  extractType :: a -> Extract Type
+  extractType      :: a -> Extract Type
+  extractTypeAt    :: a -> Kind -> Extract Type
 
 instance ExtractType Term where
   extractType v = do
@@ -239,18 +240,47 @@ instance ExtractType Term where
             addContext (x, dom) $  -- OR: (x, defaultDom mk) !?
               extractType (absBody b)
           -- Otherwise, a function type @U → T@.
-          Nothing -> tArrow <$> extractType dom
-                            <*> extractType (absApp b dummy)
+          Nothing  -> tArrow <$> extractType dom
+                             <*> extractType (absApp b dummy)
       -- Universes and Level carry no runtime content:
-      I.Sort{}   -> return $ tErased
-      I.Level{}  -> return $ tErased
+      I.Sort{}     -> return tErased
+      I.Level{}    -> return tErased
       -- A meta variable can stand for anything.
-      I.MetaV{}  -> return $ tUnknown
-      I.DontCare v -> return $ tErased
-      I.Shared{} -> __IMPOSSIBLE__
+      I.MetaV{}    -> return tUnknown
+      I.DontCare v -> return tErased
+      I.Shared{}   -> __IMPOSSIBLE__
     where
-      dummy = I.Lit $ LitString empty $
-        "VariableSubstitutedDuringTypeExtraction"
+      dummy = I.Lit $ LitString empty "VariableSubstitutedDuringTypeExtraction"
+
+  extractTypeAt t a =        -- similar to extractTermCheck
+    case ignoreSharing t of
+      Lam ai b -> do
+        let x = absName b
+        case funTypeView a of
+          FTArrow t u  -> fLam TermArg . Abs x <$>
+                            underAbs t b $ \ v -> extractTypeAt v u
+                                    
+          FTForall k f -> fLam TypeArg . Abs x <$>
+                            underAbs k b $ \ v -> extractTypeAt v (absBody f)
+        
+          FTEraseArg u -> strengthen __IMPOSSIBLE__ <$>
+                            underAbs tErased b $ \ v -> extractTypeAt v u
+                
+          FTNo         -> fCoerce <$>
+                      if getRelevance ai `elem` [Irrelevant, UnusedArg, Forced]
+                        then strengthen __IMPOSSIBLE__ <$>
+                          underAbs tErased b $ \ v -> extractTypeAt v tUnknown
+                        else fLam TermArg . Abs x <$>
+                          underAbs tUnknown b $ \ v -> extractTypeAt v tUnknown
+                
+          _            ->  do
+              (_e, t) <- extractTermInfer t
+              ifM (tryConversion $ compareTerm CmpLeq topSort t a) (return t)
+                $ {- else -} return $ fCoerce t
+   
+    where underAbs t = underAbstraction (defaultDom (El I.Inf t))
+
+
 
 -- similar to extractArgs
 extractTypeArgs = undefined
@@ -261,38 +291,6 @@ instance ExtractType I.Type where
 instance ExtractType a => ExtractType (Dom a) where
   extractType = extractType . unDom
 
--- similar to extractTermCheck
-extractTypeAt :: I.Term -> Kind -> Extract Type
-extractTypeAt t a = do
-  case ignoreSharing t of
-    Lam ai b -> do
-      let x = absName b
-      case funTypeView a of
-        FTArrow t u  -> fLam TermArg . Abs x <$>
-                          underAbs t b $ \ v -> extractTypeAt v u
-                                    
-        FTForall k f -> fLam TypeArg . Abs x <$>
-                          underAbs k b $ \ v -> extractTypeAt v (absBody f)
-        
-        FTEraseArg u -> strengthen __IMPOSSIBLE__ <$>
-                          underAbs tErased b $ \ v -> extractTypeAt v u
-                
-        FTNo         -> fCoerce <$>
-                    if getRelevance ai `elem` [Irrelevant, UnusedArg, Forced]
-                      then strengthen __IMPOSSIBLE__ <$>
-                        underAbs tErased b $ \ v -> extractTypeAt v tUnknown
-                      else fLam TermArg . Abs x <$>
-                        underAbs tUnknown b $ \ v -> extractTypeAt v tUnknown
-                
-        _            ->  do
-            (e, t) <- extractTypeInfer t
-            ifM (tryConversion $ compareTerm CmpLeq topSort t a) (return e)
-              $ {- else -} return $ fCoerce e
-   
-  where underAbs t = underAbstraction (defaultDom (El I.Inf t))
-
--- TODO:
-extractTypeInfer = undefined
 
 
 
@@ -414,7 +412,7 @@ class ExtractTerm a where
   extractTermCheck :: a -> Type -> Extract Expr
   extractTermInfer :: a -> Extract (Expr, Type)
   extractArgs      :: Type -> [Args' a] -> Extract ([Arg Expr], Type)
-  extractElims     :: Type -> [I.Elim' a] -> Extract ([I.Elim' Expr], Type)
+  extractElims     :: Type -> [I.Elim' a] -> Extract ([Agda.Compiler.Fomega.Syntax.Elim Expr], Type)
 
 
 instance ExtractTerm Term where
