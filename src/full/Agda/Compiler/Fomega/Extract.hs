@@ -207,7 +207,7 @@ instance ExtractKind a => ExtractKind (Dom a) where
 --   @(n : ℕ) → Vec X n@ is extracted to @ℕ → Vec X ()@.
 class ExtractType a where
   extractType      :: a -> Extract Type
-  extractTypeAt    :: a -> Kind -> Extract Type
+  extractTypeAt    :: Kind -> a -> Extract Type
 
 instance ExtractType Term where
   extractType v = do
@@ -251,32 +251,23 @@ instance ExtractType Term where
     where
       dummy = I.Lit $ LitString empty "VariableSubstitutedDuringTypeExtraction"
 
-  extractTypeAt t a =        -- similar to extractTermCheck
-    case ignoreSharing t of
-      Lam ai b -> do
-        let x = absName b
-        case funTypeView a of
-          FTArrow t u  -> fLam TermArg . Abs x <$>
-                            underAbs t b $ \ v -> extractTypeAt v u
-                                    
-          FTForall k f -> fLam TypeArg . Abs x <$>
-                            underAbs k b $ \ v -> extractTypeAt v (absBody f)
-        
-          FTEraseArg u -> strengthen __IMPOSSIBLE__ <$>
-                            underAbs tErased b $ \ v -> extractTypeAt v u
-                
-          FTNo         -> fCoerce <$>
-                      if getRelevance ai `elem` [Irrelevant, UnusedArg, Forced]
-                        then strengthen __IMPOSSIBLE__ <$>
-                          underAbs tErased b $ \ v -> extractTypeAt v tUnknown
-                        else fLam TermArg . Abs x <$>
-                          underAbs tUnknown b $ \ v -> extractTypeAt v tUnknown
-                
-          _            ->  do
-              (_e, t) <- extractTermInfer t
-              ifM (tryConversion $ compareTerm CmpLeq topSort t a) (return t)
-                $ {- else -} return $ fCoerce t
-   
+  extractTypeAt k t =        -- similar to extractTermCheck
+    case kindView k of
+      KType         -> extractType t
+      KTerm         -> tErased
+      KArrow k1 k2  -> do
+
+        case ignoreSharing t of
+
+          Lam ai b -> tLam . Abs (absName b) <$>
+            underAbs k1 b $ \ v -> extractTypeAt k2 v
+
+          _ -> do
+            let x = stringToArgName "X"
+            tLam . Abs x <$>
+              addContext (x, k1) $
+                extractTypeAt k2 $ raise 1 t `apply` defaultArg (Var 0)
+
     where underAbs t = underAbstraction (defaultDom (El I.Inf t))
 
 
@@ -472,3 +463,6 @@ instance ExtractTerm Term where
              (e, t) <- extractTermInfer v
              (es, t') <- extractElims tUnknown es
              return ([Coerce, I.Apply (Arg TermArg e)] ++ es, t')
+
+
+-- -}
