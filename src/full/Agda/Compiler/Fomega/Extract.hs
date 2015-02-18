@@ -266,7 +266,8 @@ instance ExtractType Term where
             let x = stringToArgName "X"
             tLam . Abs x <$>
               addContext (x, k1) $
-                extractTypeAt k2 $ raise 1 t `apply` defaultArg (Var 0)
+                extractTypeAt k2 $ (raise 1 t) `apply` _ (Var 0)
+                                                    -- TODO defaultArg (Var 0)
 
     where underAbs t = underAbstraction (defaultDom (El I.Inf t))
 
@@ -401,35 +402,34 @@ Inferring application:
 class ExtractTerm a where
   extractTermCheck :: a -> Type -> Extract Expr
   extractTermInfer :: a -> Extract (Expr, Type)
-  extractArg       :: Type -> I.Arg a
+  extractArg       :: Bool -> Type -> I.Arg a
                    -> (Type -> [F.Elim (F.Arg Expr)] -> Extract a) -> Extract a
   extractArgs      :: Type -> [I.Arg a] -> Extract ([Arg Expr], Type)
   extractElims     :: Type -> [I.Elim' a] -> Extract ([F.Elim (F.Arg Expr)], Type)
 
 
 instance ExtractTerm Term where
-  extractTermCheck v a = do
+  extractTermCheck v a =
     case ignoreSharing v of
       Lam ai b -> do
         let x = absName b
         case funTypeView a of
-          FTArrow t u -> fLam TermArg . Abs x <$> do
-            underAbs t b $ \ v -> do
-              extractTermCheck v u
-          FTForall k f -> fLam TypeArg . Abs x <$> do
-            underAbs k b $ \ v -> do
-              extractTermCheck v (absBody f)
-          FTEraseArg u -> strengthen __IMPOSSIBLE__ <$> do
-            underAbs tErased b $ \ v -> do
-              extractTermCheck v u
+          
+          FTArrow t u -> fLam TermArg . Abs x <$>
+            underAbs t b $ \ v -> extractTermCheck v u
+            
+          FTForall k f -> fLam TypeArg . Abs x <$>
+            underAbs k b $ \ v -> extractTermCheck v (absBody f)
+            
+          FTEraseArg u -> strengthen __IMPOSSIBLE__ <$>
+            underAbs tErased b $ \ v -> extractTermCheck v u
+            
           FTNo -> fCoerce <$> do
             if getRelevance ai `elem` [Irrelevant, UnusedArg, Forced]
-             then strengthen __IMPOSSIBLE__ <$> do
-                underAbs tErased b $ \ v -> do
-                  extractTermCheck v tUnknown
-             else fLam TermArg . Abs x <$> do
-                underAbs tUnknown b $ \ v -> do
-                  extractTermCheck v tUnknown
+             then strengthen __IMPOSSIBLE__ <$>
+                underAbs tErased b $ \ v -> extractTermCheck v tUnknown
+             else fLam TermArg . Abs x <$>
+                underAbs tUnknown b $ \ v -> extractTermCheck v tUnknown
       _ -> do
         (e, t) <- extractTermInfer v
         ifM (tryConversion $ compareTerm CmpLeq topSort t a) (return e) $ {- else -}
@@ -438,21 +438,25 @@ instance ExtractTerm Term where
     where
       underAbs t = underAbstraction (defaultDom (El I.Inf t))
 
-  extractTermInfer v = do
+  extractTermInfer v =
     case ignoreSharing v of
+      
       I.Var i es -> do
         t <- typeOfBV i
         (es', t') <- extractElims (unEl t) es
         return (fVar (Var i) (Elims es'), t')
+        
       I.Def f es -> do
         t <- typeOfConst f
         (es', t') <- extractElims (unEl t) es
         return (fDef f (Elims es'), t')
+        
       I.Con c vs -> do
         let f = conName c
         t <- typeOfConst f
         (as, t') <- extractArgs (unEl t) vs
-        return (fCon f (Argss as), t')
+        return (fCon c (Args as), t')  -- return (fCon f (Args as), t')
+     
       _ -> __IMPOSSIBLE__
 
 
@@ -477,14 +481,16 @@ instance ExtractTerm Term where
     case es of
       []                 -> return ([], t)
       (I.Proj{}  : _)    -> __IMPOSSIBLE__
-      (I.Apply arg : es) -> extractArg t arg $ \ t0 es0 -> do
-         (es', t') <- extractElims t0 es
+      (I.Apply arg : es) -> _ t arg $ \ t0 es0 -> do  
+                   -- TODO extractArg t arg $ \ t0 es0 -> do
+        
+         (es', t') <- _ _ _  -- TODO extractElims t0 es
          return (es0 ++ es', t')
 
   extractArgs t args = do
     case args of
       []         -> return ([], t)
-      (arg : as) -> extractArg t arg $ \ t0 es0 -> do
+      (arg : as) -> _ t arg $ \ t0 es0 -> do --- TODO extractArg t arg $ \ t0 es0 -> do
          -- Constructor types are always function types, so
          -- no coercions possible.
          let as0 = map elimToArg es0
