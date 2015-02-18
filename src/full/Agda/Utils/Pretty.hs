@@ -1,5 +1,3 @@
-{-# OPTIONS_GHC -fwarn-missing-signatures #-}
-
 {-# LANGUAGE CPP                  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
@@ -23,18 +21,17 @@ import Control.Monad.Trans
 
 import Data.Function
 import Data.Int ( Int32 )
-import Data.Monoid
+import Data.Monoid hiding ((<>))
 
 import Text.PrettyPrint hiding (TextDetails(Str), empty)
 
+import Agda.Utils.Functor
+import Agda.Utils.Monad
 import Agda.Utils.Null
 
 instance Null Doc where
   empty = mempty
   null  = (== mempty)
-
-import Agda.Utils.Functor
-import Agda.Utils.Monad
 
 -- * Pretty class
 
