@@ -141,6 +141,29 @@ type Expr = Term
 type ExprView = ExprView' Expr
 type Args = Args' Expr
 
+instance ExprRep Expr where
+  -- Representation of Fomega expressions in Agda terms
+  fVar (Var i) (Elims es) = I.Var i $ map repElim es
+  fLam ai b              = I.Lam (repArgInfo ai) b
+  fLit l                 = I.Lit l
+  fDef f (Elims es)      = I.Def f $ map repElim es
+  fCon c (Args vs)       = I.Con c $ map repArg vs
+  fCoerce v              = I.Level $ I.Max [I.Plus 0 $ I.UnreducedLevel v]
+
+  exprView v =
+    case ignoreSharing v of
+      I.Var i es -> FVar (Var i) $ Elims $ map unrepElim es
+      I.Lam ai b -> FLam (unrepArgInfo ai) b
+      I.Lit l    -> FLit l
+      I.Def f es -> FDef f $ Elims $ map unrepElim es
+      I.Con c vs -> FCon c $ Args $ map unrepArg vs
+      I.Level (I.Max [I.Plus 0 (I.UnreducedLevel v)]) -> FCoerce v
+      _          -> __IMPOSSIBLE__
+
+
+-- * Conversion from Agda decorations to Fomega decorations
+
+
 -- TypeArg is represented as Irrelevant
 -- TermArg as Relevant
 
@@ -154,29 +177,13 @@ unrepArgInfo ai = if getRelevance ai == Irrelevant then TypeArg else TermArg
 repArg :: Arg a -> I.Arg a
 repArg (Arg ai v) = Common.Arg (repArgInfo ai) v
 
-unrepElim :: I.Elim' a -> Arg a
-unrepElim Proj{}      = __IMPOSSIBLE__
-unrepElim (I.Apply a) = unrepArg a
+unrepElim :: I.Elim' a -> F.Elim (F.Arg a)
+unrepElim I.Proj{}    = Coerce
+unrepElim (I.Apply a) = F.Apply $ unrepArg a
 
-unrepArg :: I.Arg a -> Arg a
-unrepArg (Common.Arg ai v) = Arg (unrepArgInfo ai) v where
+repElim :: F.Elim (F.Arg a) -> I.Elim' a
+repElim F.Coerce    = I.Proj empty
+repElim (F.Apply a) = I.Apply $ repArg a
 
-instance ExprRep Expr where
-  -- Representation of Fomega expressions in Agda terms
-  fVar (Var i) (Args vs) = I.Var i $ map (Apply . repArg) vs
-  fLam ai b              = I.Lam (repArgInfo ai) b
-  fLit l                 = I.Lit l
-  fDef f (Args vs)       = I.Def f $ map (Apply . repArg) vs
-  fCon c (Args vs)       = I.Con c $ map repArg vs
-  fCoerce v              = I.Level $ I.Max [I.Plus 0 $ UnreducedLevel v]
-
-  exprView v =
-    case ignoreSharing v of
-      I.Var i es -> FVar (Var i) $ Args $ map unrepElim es
-      I.Lam ai b -> FLam (unrepArgInfo ai) b
-      I.Lit l    -> FLit l
-      I.Def f es -> FDef f $ Args $ map unrepElim es
-      I.Con c vs -> FCon c $ Args $ map unrepArg vs
-      I.Level (I.Max [I.Plus 0 (I.UnreducedLevel v)]) -> FCoerce v
-      _          -> __IMPOSSIBLE__
-
+unrepArg :: I.Arg a -> F.Arg a
+unrepArg (Common.Arg ai v) = Arg (unrepArgInfo ai) v

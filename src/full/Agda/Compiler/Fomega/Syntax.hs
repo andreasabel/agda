@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DeriveFoldable             #-}
 {-# LANGUAGE DeriveTraversable          #-}
@@ -16,8 +17,18 @@ import Data.Foldable    (Foldable)
 import Data.Traversable (Traversable)
 
 import Agda.Syntax.Abstract.Name
+import Agda.Syntax.Common
+  ( defaultArgInfo
+  , Relevance(..), LensRelevance(..)
+  )
+import qualified Agda.Syntax.Common as Common
 import qualified Agda.Syntax.Internal as I
 import Agda.Syntax.Literal
+
+import Agda.Utils.Null
+
+#include "undefined.h"
+import Agda.Utils.Impossible
 
 -- * Kinds
 
@@ -44,6 +55,7 @@ class KindRep a where
   -- ^ Construct a function kind.
 
 newtype WrapKind a = WrapKind { wrappedKind :: a }
+  deriving (Eq, Ord, Show)
 
 -- * Types
 
@@ -68,9 +80,10 @@ data TypeView' k a
 
 -- | Type variables are represented by de Bruijn indices.
 newtype TyVar = TyVar { theTyVar :: Int }
+  deriving (Eq, Ord, Show, Num)
 
 newtype TyArgs' a = TyArgs { theTyArgs :: [a] }
-  deriving (Functor, Foldable, Traversable)
+  deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Null)
 
 -- ** Class interface
 
@@ -118,19 +131,20 @@ data FunTypeView' k a
     -- ^ We are not a function type of any sort.
 
 newtype WrapType a = WrapType { wrappedType :: a }
+  deriving (Eq, Ord, Show)
 
 -- * Expressions
 
 -- | System Fω expressions in β-normal form.
 --   Note: 'Agda.Syntax.Internal' has already only β-normal forms.
 data ExprView' a
-  = FVar {-# UNPACK #-} !Var (Elims a)
+  = FVar {-# UNPACK #-} !Var (Elims' (Arg a))
     -- ^ Variables @x es@.
   | FLam ArgInfo (I.Abs a)
     -- ^ Term abstraction @λx.e@ or type abstraction @ΛX.e@.
   | FLit Literal
     -- ^ Constant numbers, strings, chars etc.
-  | FDef QName (Elims a)
+  | FDef QName (Elims' (Arg a))
     -- ^ Defined function @f es@.
   | FCon I.ConHead (Args' a)
     -- ^ Data constructor @c es@.
@@ -140,6 +154,7 @@ data ExprView' a
 
 -- | Term variables are de Bruijn indices.
 newtype Var = Var { theVar :: Int }
+  deriving (Eq, Ord, Show, Num)
 
 -- | Classification of arguments in expression application.
 data ArgInfo
@@ -147,6 +162,7 @@ data ArgInfo
     -- ^ Type argument.
   | TermArg
     -- ^ Term argument.
+  deriving (Eq, Ord, Show)
 
 -- | Decorated arguments.
 data Arg a = Arg
@@ -154,11 +170,11 @@ data Arg a = Arg
     -- ^ Argument decoration.
   , arg     :: a
     -- ^ The argument.
-  } deriving (Functor, Foldable, Traversable)
+  } deriving (Eq, Ord, Show, Functor, Foldable, Traversable)
 
 -- | List of arguments.
 newtype Args' a = Args { theArgs :: [Arg a] }
-  deriving (Functor, Foldable, Traversable)
+  deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Null)
 
 -- | Eliminations are either arguments or coercions.
 data Elim a
@@ -167,23 +183,32 @@ data Elim a
   deriving (Eq, Ord, Show, Functor, Foldable, Traversable)
 
 -- | List of eliminations.
-newtype Elims a = Elims { theElims :: [Elim a] }
-  deriving (Functor, Foldable, Traversable)
+newtype Elims' a = Elims { theElims :: [Elim a] }
+  deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Null)
 
 -- ** Class interface
 
 class ExprRep a where
   exprView :: a -> ExprView' a
   -- ^ View @a@ as expression.
-  fVar :: Var -> Elims a -> a
+  fVar :: Var -> Elims' (Arg a) -> a
   -- ^ Construct a neutral expression.
   fLam :: ArgInfo -> I.Abs a -> a
   -- ^ Construct a lambda abstraction.
   fLit :: Literal -> a
   -- ^ Construct a literal expression.
-  fDef :: QName -> Elims a -> a
+  fDef :: QName -> Elims' (Arg a) -> a
   -- ^ Construct a definition application.
   fCon :: I.ConHead -> Args' a -> a
   -- ^ Construct a constructor application.
   fCoerce :: a -> a
   -- ^ Construct a coerced expression.
+
+
+------------------------------------------------------------------------
+-- Show Instances
+------------------------------------------------------------------------
+
+-- TODO: nicer Show for newtypes
+-- instance Show a => Show (WrapKind a) where
+--   show (WrapKind a) = "WrapKind " ++ show a  -- precedence?

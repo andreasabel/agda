@@ -12,8 +12,11 @@ import Agda.Syntax.Abstract.Name
 import qualified Agda.Syntax.Internal as I
 import Agda.Syntax.Literal
 
-import Agda.Compiler.Fomega.Syntax (KindRep(..), TypeRep(..), ExprRep(..),
-                                    ArgInfo(..), Arg(..))
+import Agda.Compiler.Fomega.Syntax
+  ( KindRep(..), TypeRep(..), ExprRep(..)
+  , TyVar(..), Var(..)
+  , ArgInfo(..), Arg(..), Args'(..), TyArgs'(..), Elim(..), Elims'(..)
+  )
 import qualified Agda.Compiler.Fomega.Syntax as F
 
 -- | System F omega kinds.
@@ -28,7 +31,7 @@ data Kind
 
 -- | System F omega types and type constructors.
 data Type
-  = TVar {-# UNPACK #-} !TVar TyArgs
+  = TVar {-# UNPACK #-} !TyVar TyArgs
     -- ^ Type (constructor) variables (applied to types).
   | TArrow Type Type
     -- ^ Function type.
@@ -44,20 +47,17 @@ data Type
     -- ^ Type of erased things (proofs etc.)
   deriving (Show)
 
-type TyArgs = [Type]
-
--- | Type variables are represented by de Bruijn indices.
-type TVar = Int
+type TyArgs = TyArgs' Type
 
 -- | System F expressions.
 data Expr
-  = FVar {-# UNPACK #-} !FVar Args
+  = FVar {-# UNPACK #-} !Var Elims
     -- ^ Variables @x es@.
   | FLam ArgInfo (I.Abs Expr)
     -- ^ Term abstraction @λx.e@ or type abstraction @ΛX.e@.
   | FLit Literal
     -- ^ Constant numbers, strings, chars etc.
-  | FDef QName Args
+  | FDef QName Elims
     -- ^ Defined function @f es@.
   | FCon I.ConHead Args
     -- ^ Data constructor @c es@.
@@ -65,12 +65,11 @@ data Expr
     -- ^ Type cast (used for expressions that are well-typed in Agda,
     --   but ill-typed in Fω).
 
--- | Term variables are de Bruijn indices.
-type FVar = Int
-
 -- | List of arguments.
-type Args = [Arg Expr]
+type Args = Args' Expr
 
+-- | List of eliminations.
+type Elims = Elims' (Arg Expr)
 
 -- * Instantiating the abstract interface for kinds.
 
@@ -92,18 +91,18 @@ type TypeView = F.TypeView' Kind Type
 instance TypeRep Kind Type where
   typeView t =
     case t of
-      TVar i ts   -> F.TVar (F.TyVar i) (F.TyArgs ts)
+      TVar x ts   -> F.TVar x ts
       TArrow t u  -> F.TArrow t u
       TForall k t -> F.TForall k t
-      TCon d ts   -> F.TCon d (F.TyArgs ts)
+      TCon d ts   -> F.TCon d ts
       TLam t      -> F.TLam t
       TUnknown    -> F.TUnknown
       TErased     -> F.TErased
 
-  tVar x ts = TVar (F.theTyVar x) (F.theTyArgs ts)
+  tVar x ts = TVar x ts
   tArrow    = TArrow
   tForall   = TForall
-  tCon d ts = TCon d (F.theTyArgs ts)
+  tCon d ts = TCon d ts
   tLam      = TLam
   tUnknown  = TUnknown
   tErased   = TErased
@@ -116,16 +115,16 @@ type ExprView = F.ExprView' Expr
 instance ExprRep Expr where
   exprView e =
     case e of
-      FVar i es -> F.FVar (F.Var i) (F.Args es)
+      FVar x es -> F.FVar x es -- (F.Elims $ map (F.Apply . unrepElim) es)
       FLam ai f -> F.FLam ai f
       FLit l    -> F.FLit l
-      FDef d es -> F.FDef d (F.Args es)
-      FCon c es -> F.FCon c (F.Args es)
+      FDef d es -> F.FDef d es
+      FCon c as -> F.FCon c as
       FCoerce e -> F.FCoerce e
 
-  fVar x es = FVar (F.theVar x) (F.theArgs es)
+  fVar      = FVar
   fLam      = FLam
   fLit      = FLit
-  fDef d es = FDef d (F.theArgs es)
-  fCon c es = FCon c (F.theArgs es)
+  fDef      = FDef
+  fCon      = FCon
   fCoerce   = FCoerce
