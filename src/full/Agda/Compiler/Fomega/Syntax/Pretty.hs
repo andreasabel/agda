@@ -59,6 +59,10 @@ class TopPrecedence p => Precedence p where
 
 -- | Changing precedences in 'MonadPrec' sub computation.
 
+goFunction, goArgument, goLambdaBody, goArrowDomain, goArrowRange,
+  goForallDomain, goForallBody
+    :: (Precedence p, MonadPrec p m)
+    => m a -> m a
 goFunction     = localPrec precFunction
 goArgument     = localPrec precArgument
 goLambdaBody   = localPrec precLambdaBody
