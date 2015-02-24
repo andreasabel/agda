@@ -266,8 +266,8 @@ instance ExtractType Term where
             let x = stringToArgName "X"
             tLam . Abs x <$>
               addContext (x, k1) $
-                extractTypeAt k2 $ (raise 1 t) `apply` _ (Var 0)
-                                                    -- TODO defaultArg (Var 0)
+                extractTypeAt k2 $ (raise 1 $ defaultArg (Var 0))
+                -- WAS: (raise 1 t) `apply` defaultArg (Var 0)
 
     where underAbs t = underAbstraction (defaultDom (El I.Inf t))
 
@@ -403,8 +403,8 @@ class ExtractTerm a where
   extractTermCheck :: a -> Type -> Extract Expr
   extractTermInfer :: a -> Extract (Expr, Type)
   extractArg       :: Bool -> Type -> I.Arg a
-                   -> (Type -> [F.Elim (F.Arg Expr)] -> Extract a) -> Extract a
-  extractArgs      :: Type -> [I.Arg a] -> Extract ([Arg Expr], Type)
+                      -> (Type -> [F.Elim (F.Arg Expr)] -> Extract a) -> Extract a
+  extractArgs      :: Type -> [I.Arg a]   -> Extract ([Arg Expr], Type)
   extractElims     :: Type -> [I.Elim' a] -> Extract ([F.Elim (F.Arg Expr)], Type)
 
 
@@ -455,7 +455,7 @@ instance ExtractTerm Term where
         let f = conName c
         t <- typeOfConst f
         (as, t') <- extractArgs (unEl t) vs
-        return (fCon c (Args as), t')  -- return (fCon f (Args as), t')
+        return (fCon c (Args as), t')  -- WAS: return (fCon f (Args as), t')
      
       _ -> __IMPOSSIBLE__
 
@@ -473,29 +473,33 @@ instance ExtractTerm Term where
 
       FTEraseArg a -> ret a []
 
-      FTNo -> do
-        (e, _t) <- extractTermInfer v
-        ret tUnknown [Coerce, F.Apply (Arg TermArg e)]
-
+      FTNo -> case canFTNo of
+        False -> undefined  -- TODO
+        True  -> do
+          (e, _t) <- extractTermInfer v
+          ret tUnknown [Coerce, F.Apply (Arg TermArg e)]
+          
   extractElims t es = do
     case es of
       []                 -> return ([], t)
       (I.Proj{}  : _)    -> __IMPOSSIBLE__
-      (I.Apply arg : es) -> _ t arg $ \ t0 es0 -> do  
-                   -- TODO extractArg t arg $ \ t0 es0 -> do
-        
-         (es', t') <- _ _ _  -- TODO extractElims t0 es
-         return (es0 ++ es', t')
+      (I.Apply arg : es) -> do
+         let flag = True -- ?
+         extractArg flag t arg $ \ t0 es0 -> do
+          -- WAS: extractArg t arg $ \ t0 es0 -> do
+           (es', t') <- extractElims t0 es
+           return (es0 ++ es', t')
 
   extractArgs t args = do
     case args of
       []         -> return ([], t)
-      (arg : as) -> _ t arg $ \ t0 es0 -> do --- TODO extractArg t arg $ \ t0 es0 -> do
+      (arg : as) ->
+         extractArg True t arg $ \ t0 es0 -> do --- WAS: extractArg t arg $ \..
          -- Constructor types are always function types, so
          -- no coercions possible.
-         let as0 = map elimToArg es0
-         (as', t') <- extractArgs t0 as
-         return (as0 ++ as', t')
+            let as0 = map elimToArg es0
+            (as', t') <- extractArgs t0 as
+            return (as0 ++ as', t')
 
 elimToArg (F.Coerce{}) = __IMPOSSIBLE__
 elimToArg (F.Apply a)  = a
