@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP                   #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeSynonymInstances  #-}  -- ghc >= 7.0
 
@@ -111,6 +112,8 @@ import Control.Monad
 import Control.Monad.Trans
 import Control.Monad.Trans.Maybe
 
+import Data.Monoid
+
 import Agda.Syntax.Common hiding (Dom, Arg, ArgInfo)
 import qualified Agda.Syntax.Common as Common
 import Agda.Syntax.Literal
@@ -125,13 +128,14 @@ import Agda.TypeChecking.Reduce
 import Agda.TypeChecking.Substitute
 
 import Agda.Compiler.Fomega.Syntax as F
-import Agda.Compiler.Fomega.Syntax.AgdaInternal (Kind, Type, Expr)
+import Agda.Compiler.Fomega.Syntax.AgdaInternal (Kind, Type, Expr, TyArgs)
 -- import Agda.Compiler.Fomega.Syntax.Inductive (Expr)
 
 import Agda.Utils.Functor
 import Agda.Utils.Maybe
 import Agda.Utils.Monad
 import Agda.Utils.Null
+import Agda.Utils.Singleton
 
 #include "undefined.h"
 import Agda.Utils.Impossible
@@ -163,6 +167,13 @@ type Extract = TCM
 --     @
 --
 --     @Set → ℕ → Set@ is extracted as @⋆ → () → ⋆@
+--
+--     Extraction function:  @|T| = κ@
+--     @
+--       |Set ℓ|         = *
+--       |(x : T) → T'| = |T| -> |T'|
+--       |T|             = ()           -- otherwise
+--     @
 --
 class ExtractKind a where
 
@@ -201,10 +212,46 @@ instance ExtractKind a => ExtractKind (Dom a) where
 
 -- | Extract a Fomega type from an Agda expression.
 --
+--   Fomega types are:  A,B ::= x Gs | D Gs | A -> B | ∀x:κ. A
+--
 --   Examples:
 --
 --   @(X : Set) -> X@ is extracted to @∀ X:⋆. X@.
 --   @(n : ℕ) → Vec X n@ is extracted to @ℕ → Vec X ()@.
+--
+--   Extraction functions:
+--
+--     @|Γ ⊢ T : κ| = F@ (at kind @κ@)
+--     @|Γ ⊢ T|     = A@ (at kind @*@).
+--     @|Γ ⊢ κ > vs| = Gs@ (extract arguments)
+--
+--   Γ record the kinds κ of type variables x.
+--
+--   Definition of @|Γ ⊢ T|@:
+--   @
+--     |Γ ⊢ (x : T) -> T'| = ∀ x : κ. |Γ,x:κ ⊢ T'|  if κ := |T| ≠ ()
+--
+--     |Γ ⊢ (x : T) -> T'| = |Γ ⊢ T| -> |Γ ⊢ T'[_/x]|    if |T| = ()
+--
+--     |Γ ⊢ x vs         | = x |Γ ⊢ Γ(x) > vs|
+--     |Γ ⊢ D vs         | = D |Γ ⊢ Γ(x) > vs|  -- D data or record type
+--     |Γ ⊢ f es         | = ?                     -- otherwise: unknown type
+--     |Γ ⊢ X es         | = ?
+--     |Γ ⊢ Set ℓ        | = ()
+--   @
+--   Definition of @|Γ ⊢ T : κ|@:
+--   @
+--      |Γ ⊢ T :  *| = |Γ ⊢ T|
+--      |Γ ⊢ T : ()| = ()
+--      |Γ ⊢ T : κ → κ'| = λ x. |Γ,x:κ ⊢ T x : κ'|
+--   @
+--   Definition of @|Γ ⊢ κ > vs|@
+--   @
+--      |Γ ⊢ *         > ε     | = ε
+--      |Γ ⊢ (κ → κ') > (v,vs)| = |Γ ⊢ v : κ| , |Γ ⊢ κ' > vs|
+--   @
+--   (other cases should be impossible).
+
 class ExtractType a where
   extractType      :: a -> Extract Type
   extractTypeAt    :: Kind -> a -> Extract Type
@@ -220,15 +267,17 @@ instance ExtractType Term where
       -- Neutral types:
       I.Var i es    -> do
         caseMaybe (allApplyElims es) (return tUnknown) $ \ args -> do
-        t <- typeOfBV i
-        tVar (TyVar i) <$> extractTypeArgs t args
+        k <- unEl <$> typeOfBV i
+        tVar (TyVar i) <$> extractTypeArgs k args
       -- Data types and stuck defined types:
       I.Def d es -> do
         caseMaybeM (isDataOrRecordType d) (return tUnknown) $ \ _ -> do
         -- @d@ is data or record constructor:
         t <- defType <$> getConstInfo d
+        -- We know that t corresponds to a kind, as it is the type of a data/record.
+        k <- fromMaybe __IMPOSSIBLE__ <$> extractKind t
         let args = fromMaybe __IMPOSSIBLE__ $ allApplyElims es
-        tCon d <$> do extractTypeArgs t args
+        tCon d <$> do extractTypeArgs k args
       -- Function types and polymorphic types
       I.Pi dom b -> do
         let x = absName b
@@ -236,14 +285,14 @@ instance ExtractType Term where
         case mk of
           -- If @dom@ is a kind @κ@, we return a polymorphic type @∀X:κ.T@.
           Just k -> tForall k . mkAbs x <$> do
-            addContext (x, dom) $  -- OR: (x, defaultDom mk) !?
+            addContext (x, fmap (const k) <$> dom) $
               extractType (absBody b)
           -- Otherwise, a function type @U → T@.
           Nothing  -> tArrow <$> extractType dom
                              <*> extractType (absApp b dummy)
-      -- Universes and Level carry no runtime content:
+      -- Universes carry no runtime content:
       I.Sort{}     -> return tErased
-      I.Level{}    -> return tErased
+      I.Level{}    -> return __IMPOSSIBLE__
       -- A meta variable can stand for anything.
       I.MetaV{}    -> return tUnknown
       I.DontCare v -> return tErased
@@ -254,33 +303,63 @@ instance ExtractType Term where
   extractTypeAt k t =        -- similar to extractTermCheck
     case kindView k of
       KType         -> extractType t
-      KTerm         -> tErased
+      KTerm         -> return $ tErased
       KArrow k1 k2  -> do
 
         case ignoreSharing t of
 
-          Lam ai b -> tLam . Abs (absName b) <$>
-            underAbs k1 b $ \ v -> extractTypeAt k2 v
+          Lam ai b -> do
+            (g :: Type) <- underAbstraction (kDom k1) b $ \ v -> extractTypeAt k2 v
+            return $ tLam $ Abs (absName b) g
+
+          -- Why does the following not type-check? GHC complains about
+          --   No instance for (TypeRep k0 (TCMT IO Type))
+          --   arising from a use of ‘tLam’
+          --
+          -- Lam ai b -> tLam . Abs (absName b) <$>
+          --   underAbstraction (kDom k1) b $ \ v -> extractTypeAt k2 v
 
           _ -> do
             let x = stringToArgName "X"
-            tLam . Abs x <$>
-              addContext (x, k1) $
-                extractTypeAt k2 $ (raise 1 $ defaultArg (Var 0))
-                -- WAS: (raise 1 t) `apply` defaultArg (Var 0)
+            (g :: Type) <- do
+              addContext (x, kDom k1) $
+                extractTypeAt k2 $ raise 1 t `apply` [defaultArg (var 0)]
+            return $ tLam $ Abs x g
+            -- Why does the following not type-check? GHC complains about
+            --   No instance for (TypeRep k0 (TCMT IO Type))
+            --   arising from a use of ‘tLam’
+            --
+            -- tLam . Abs x <$>
+            --   addContext (x, kDom k1) $
+            --     extractTypeAt k2 $ raise 1 t `apply` [defaultArg (var 0)]
 
-    where underAbs t = underAbstraction (defaultDom (El I.Inf t))
+    where
+      kDom :: Kind -> I.Dom I.Type
+      kDom k = defaultDom (El I.Inf k)
 
-
-
--- similar to extractArgs
-extractTypeArgs = undefined
+-- | Extract a list of arguments as type arguments.
+extractTypeArgs :: Kind -> I.Args -> Extract TyArgs
+extractTypeArgs k args0 = do
+  case (kindView k, args0) of
+    (KType, []) -> return empty
+    (KArrow k1 k2, arg : args) -> do
+      g <- extractTypeAt k1 arg
+      gs <- extractTypeArgs k2 args
+      return $ singleton g `mappend` gs
+      -- OR: return $ TyArgs $ g : theTyArgs gs
+    _ -> __IMPOSSIBLE__
 
 instance ExtractType I.Type where
   extractType = extractType . unEl
+  extractTypeAt k = extractTypeAt k . unEl
 
-instance ExtractType a => ExtractType (Dom a) where
+instance ExtractType a => ExtractType (I.Dom a) where
   extractType = extractType . unDom
+  extractTypeAt k = extractTypeAt k . unDom
+
+instance ExtractType a => ExtractType (I.Arg a) where
+  extractType = extractType . unArg
+  extractTypeAt k = extractTypeAt k . unArg
 
 
 
@@ -399,6 +478,8 @@ Inferring application:
 
 -}
 
+{-
+
 class ExtractTerm a where
   extractTermCheck :: a -> Type -> Extract Expr
   extractTermInfer :: a -> Extract (Expr, Type)
@@ -414,16 +495,16 @@ instance ExtractTerm Term where
       Lam ai b -> do
         let x = absName b
         case funTypeView a of
-          
+
           FTArrow t u -> fLam TermArg . Abs x <$>
             underAbs t b $ \ v -> extractTermCheck v u
-            
+
           FTForall k f -> fLam TypeArg . Abs x <$>
             underAbs k b $ \ v -> extractTermCheck v (absBody f)
-            
+
           FTEraseArg u -> strengthen __IMPOSSIBLE__ <$>
             underAbs tErased b $ \ v -> extractTermCheck v u
-            
+
           FTNo -> fCoerce <$> do
             if getRelevance ai `elem` [Irrelevant, UnusedArg, Forced]
              then strengthen __IMPOSSIBLE__ <$>
@@ -440,23 +521,23 @@ instance ExtractTerm Term where
 
   extractTermInfer v =
     case ignoreSharing v of
-      
+
       I.Var i es -> do
         t <- typeOfBV i
         (es', t') <- extractElims (unEl t) es
         return (fVar (Var i) (Elims es'), t')
-        
+
       I.Def f es -> do
         t <- typeOfConst f
         (es', t') <- extractElims (unEl t) es
         return (fDef f (Elims es'), t')
-        
+
       I.Con c vs -> do
         let f = conName c
         t <- typeOfConst f
         (as, t') <- extractArgs (unEl t) vs
         return (fCon c (Args as), t')  -- WAS: return (fCon f (Args as), t')
-     
+
       _ -> __IMPOSSIBLE__
 
 
@@ -478,7 +559,7 @@ instance ExtractTerm Term where
         True  -> do
           (e, _t) <- extractTermInfer v
           ret tUnknown [Coerce, F.Apply (Arg TermArg e)]
-          
+
   extractElims t es = do
     case es of
       []                 -> return ([], t)

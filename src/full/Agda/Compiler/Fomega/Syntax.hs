@@ -13,6 +13,7 @@
 
 module Agda.Compiler.Fomega.Syntax where
 
+import Data.Monoid
 import Data.Foldable    (Foldable)
 import Data.Traversable (Traversable)
 
@@ -26,6 +27,7 @@ import qualified Agda.Syntax.Internal as I
 import Agda.Syntax.Literal
 
 import Agda.Utils.Null
+import Agda.Utils.Singleton
 
 #include "undefined.h"
 import Agda.Utils.Impossible
@@ -83,7 +85,7 @@ newtype TyVar = TyVar { theTyVar :: Int }
   deriving (Eq, Ord, Show, Num)
 
 newtype TyArgs' a = TyArgs { theTyArgs :: [a] }
-  deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Null)
+  deriving (Eq, Ord, Show, Functor, Foldable, Traversable, Null, Singleton a, Monoid)
 
 -- ** Class interface
 
