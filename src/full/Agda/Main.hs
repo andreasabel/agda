@@ -36,6 +36,7 @@ import Agda.TypeChecking.Errors
 import Agda.Compiler.MAlonzo.Compiler as MAlonzo
 import Agda.Compiler.Epic.Compiler as Epic
 import Agda.Compiler.JS.Compiler as JS
+import Agda.Compiler.Fomega.Compiler as Fomega
 
 import Agda.Utils.Lens
 import Agda.Utils.Monad

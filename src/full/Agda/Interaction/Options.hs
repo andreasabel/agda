@@ -81,6 +81,7 @@ data CommandLineOptions = Options
   , optCompileNoMain    :: Bool
   , optEpicCompile      :: Bool
   , optJSCompile        :: Bool
+  , optFomegaCompile    :: Bool
   , optCompileDir       :: Maybe FilePath
   -- ^ In the absence of a path the project root is used.
   , optGenerateVimFile  :: Bool
@@ -158,6 +159,7 @@ defaultOptions = Options
   , optCompileNoMain    = False
   , optEpicCompile      = False
   , optJSCompile        = False
+  , optFomegaCompile    = False
   , optCompileDir       = Nothing
   , optGenerateVimFile  = False
   , optGenerateLaTeX    = False
@@ -234,7 +236,7 @@ checkOpts opts
       "--no-main only allowed in combination with --compile.\n"
   | not (atMostOne [optGHCiInteraction, isJust . optInputFile]) =
       Left "Choose at most one: input file or --interaction.\n"
-  | not (atMostOne $ interactive ++ [\x -> optCompile x, optEpicCompile, optJSCompile]) =
+  | not (atMostOne $ interactive ++ [\x -> optCompile x, optEpicCompile, optJSCompile, optFomegaCompile]) =
       Left "Choose at most one: compilers/--interactive/--interaction.\n"
   | not (atMostOne $ interactive ++ [optGenerateHTML]) =
       Left "Choose at most one: --html/--interactive/--interaction.\n"
@@ -404,6 +406,9 @@ compileEpicFlag o = return $ o { optEpicCompile = True}
 compileJSFlag :: Flag CommandLineOptions
 compileJSFlag  o = return $ o { optJSCompile = True }
 
+compileFomegaFlag :: Flag CommandLineOptions
+compileFomegaFlag  o = return $ o { optFomegaCompile = True }
+
 compileDirFlag :: FilePath -> Flag CommandLineOptions
 compileDirFlag f o = return $ o { optCompileDir = Just f }
 
@@ -469,6 +474,7 @@ standardOptions =
                     "when compiling using the MAlonzo backend (experimental), do not treat the requested module as the main module of a program"
     , Option []     ["epic"] (NoArg compileEpicFlag) "compile program using the Epic backend"
     , Option []     ["js"] (NoArg compileJSFlag) "compile program using the JS backend"
+    , Option []     ["fomega"] (NoArg compileFomegaFlag) "compile program using the Fomega backend"
     , Option []     ["compile-dir"] (ReqArg compileDirFlag "DIR")
                     ("directory for compiler output (default: the project root)")
     , Option []     ["ghc-flag"] (ReqArg ghcFlag "GHC-FLAG")
