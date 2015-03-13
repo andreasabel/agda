@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP                   #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PatternGuards         #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeSynonymInstances  #-}  -- ghc >= 7.0
@@ -111,8 +112,10 @@ import Control.Applicative hiding (empty)
 import Control.Monad
 import Control.Monad.Trans
 import Control.Monad.Trans.Maybe
+import Control.Monad.Writer
 
 import Data.Monoid
+import Data.Traversable
 
 import Agda.Syntax.Common hiding (Dom, Arg, ArgInfo)
 import qualified Agda.Syntax.Common as Common
@@ -308,30 +311,25 @@ instance ExtractType Term where
 
         case ignoreSharing t of
 
-          Lam ai b -> do
-            (g :: Type) <- underAbstraction (kDom k1) b $ \ v -> extractTypeAt k2 v
-            return $ tLam $ Abs (absName b) g
+          Lam ai b -> tLam . Abs (absName b) <$> do
+            underAbstraction (kDom k1) b $ \ v -> extractTypeAt k2 v
 
-          -- Why does the following not type-check? GHC complains about
-          --   No instance for (TypeRep k0 (TCMT IO Type))
-          --   arising from a use of ‘tLam’
-          --
-          -- Lam ai b -> tLam . Abs (absName b) <$>
-          --   underAbstraction (kDom k1) b $ \ v -> extractTypeAt k2 v
+          -- OR:
+          -- Lam ai b -> do
+          --   (g :: Type) <- underAbstraction (kDom k1) b $ \ v -> extractTypeAt k2 v
+          --   return $ tLam $ Abs (absName b) g
 
           _ -> do
             let x = stringToArgName "X"
-            (g :: Type) <- do
+            tLam . Abs x <$> do
               addContext (x, kDom k1) $
                 extractTypeAt k2 $ raise 1 t `apply` [defaultArg (var 0)]
-            return $ tLam $ Abs x g
-            -- Why does the following not type-check? GHC complains about
-            --   No instance for (TypeRep k0 (TCMT IO Type))
-            --   arising from a use of ‘tLam’
-            --
-            -- tLam . Abs x <$>
+
+            -- OR:
+            -- (g :: Type) <- do
             --   addContext (x, kDom k1) $
             --     extractTypeAt k2 $ raise 1 t `apply` [defaultArg (var 0)]
+            -- return $ tLam $ Abs x g
 
     where
       kDom :: Kind -> I.Dom I.Type
@@ -343,7 +341,7 @@ extractTypeArgs k args0 = do
   case (kindView k, args0) of
     (KType, []) -> return empty
     (KArrow k1 k2, arg : args) -> do
-      g <- extractTypeAt k1 arg
+      g  <- extractTypeAt k1 arg
       gs <- extractTypeArgs k2 args
       return $ singleton g `mappend` gs
       -- OR: return $ TyArgs $ g : theTyArgs gs
@@ -370,32 +368,37 @@ instance ExtractType a => ExtractType (I.Arg a) where
 
 {-
 
-Bidirectional extraction
-========================
+Bidirectional term extraction
+=============================
 
 Types
 
-  Base ::= D As         data type
+  Base types
+  Base ::= D Gs         data type
+         | X Gs         parametric type
          | ?            inexpressible type
 
-  A,B ::= Base | A -> B | [x:K] -> B | [] -> B  with erasure markers
-  A0, B0 ::= Base | A0 -> B0 | [x:K0] -> B0     without erasure markers
+  Types with erasure markers
+  A,B  ::= Base
+         | ∀X:κ. B     polymorphic type
+         | A -> B       function type
+         | () -> B      irrelevant function type
+
+  Type constructors
+  F,G  ::= A            type
+         | λX.G         type abstraction
+
+  Types without erasure markers
+  A0, B0 ::= Base
+           | [x:K0] -> B0
+           | A0 -> B0
+
+Deletion of erasure markers
 
   |.| erase erasure markers
 
-Inference mode:
-
-  Term extraction:  Gamma |- t :> A  --> e    |Gamma| |- e : |A|
-  Type extraction:  Gamma |- T :> K  --> A    |Gamma| |- A : |K|
-  Kind extraction:  Gamma |- U :> [] --> K    |Gamma| |- K : []
-
-Checking mode:
-
-  Term extraction:  Gamma |- t <: A  --> e    |Gamma| |- e : |A|
-  Type extraction:  Gamma |- T <: K  --> A    |Gamma| |- A : |K|
-  Kind extraction:  Gamma |- U <: [] --> K    |Gamma| |- K : []
-
-Type and kind extraction keep erasure markers!
+Inference mode:   Gamma |- t :> A  --> e    |Gamma| |- e : |A|
+Checking mode:    Gamma |- t <: A  --> e    |Gamma| |- e : |A|
 
 Checking abstraction:
 
@@ -478,16 +481,30 @@ Inferring application:
 
 -}
 
-{-
+
 
 class ExtractTerm a where
   extractTermCheck :: a -> Type -> Extract Expr
   extractTermInfer :: a -> Extract (Expr, Type)
   extractArg       :: Bool -> Type -> I.Arg a
-                      -> (Type -> [F.Elim (F.Arg Expr)] -> Extract a) -> Extract a
+                      -> (Type -> [F.Elim (F.Arg Expr)] -> Extract b) -> Extract b
   extractArgs      :: Type -> [I.Arg a]   -> Extract ([Arg Expr], Type)
   extractElims     :: Type -> [I.Elim' a] -> Extract ([F.Elim (F.Arg Expr)], Type)
 
+-- | Cast an Fomega expression of given type to a new type.
+--
+--   If the types are the same and do not contain unknown parts,
+--   no coercion is necessary, otherwise we need one.
+
+cast :: Expr -> Type -> Type -> Extract Expr
+cast e t1 t2 = do
+  let (t1', Any u1) = runWriter $ deleteErasureMarkers t1
+  let (t2', Any u2) = runWriter $ deleteErasureMarkers t2
+  if u1 || u2 || t1' /= t2' then return $ fCoerce e else return e
+
+  -- OLD:
+  -- ifM (tryConversion $ compareTerm CmpLeq topSort t a) (return e) $ {- else -}
+  --   return $ fCoerce e
 
 instance ExtractTerm Term where
   extractTermCheck v a =
@@ -496,25 +513,33 @@ instance ExtractTerm Term where
         let x = absName b
         case funTypeView a of
 
-          FTArrow t u -> fLam TermArg . Abs x <$>
+          FTArrow t u -> fLam TermArg . Abs x <$> do
             underAbs t b $ \ v -> extractTermCheck v u
 
-          FTForall k f -> fLam TypeArg . Abs x <$>
+          FTForall k f -> fLam TypeArg . Abs x <$> do
             underAbs k b $ \ v -> extractTermCheck v (absBody f)
 
-          FTEraseArg u -> strengthen __IMPOSSIBLE__ <$>
+          FTEraseArg u -> strengthen __IMPOSSIBLE__ <$> do
             underAbs tErased b $ \ v -> extractTermCheck v u
 
           FTNo -> fCoerce <$> do
             if getRelevance ai `elem` [Irrelevant, UnusedArg, Forced]
-             then strengthen __IMPOSSIBLE__ <$>
+             then strengthen __IMPOSSIBLE__ <$> do
                 underAbs tErased b $ \ v -> extractTermCheck v tUnknown
-             else fLam TermArg . Abs x <$>
+             else fLam TermArg . Abs x <$> do
                 underAbs tUnknown b $ \ v -> extractTermCheck v tUnknown
+
+      I.Lit l      -> return $ fLit l
+
+      I.Pi{}       -> return $ fDummy
+      I.Level{}    -> return $ fDummy
+      I.Sort{}     -> return $ fDummy
+      I.MetaV{}    -> return $ fDummy
+      I.DontCare{} -> return $ fDummy
+
       _ -> do
         (e, t) <- extractTermInfer v
-        ifM (tryConversion $ compareTerm CmpLeq topSort t a) (return e) $ {- else -}
-          return $ fCoerce e
+        cast e t a
 
     where
       underAbs t = underAbstraction (defaultDom (El I.Inf t))
@@ -538,7 +563,16 @@ instance ExtractTerm Term where
         (as, t') <- extractArgs (unEl t) vs
         return (fCon c (Args as), t')  -- WAS: return (fCon f (Args as), t')
 
-      _ -> __IMPOSSIBLE__
+      I.Lit{}      -> __IMPOSSIBLE__
+
+      I.Pi{}       -> __IMPOSSIBLE__
+      I.Level{}    -> __IMPOSSIBLE__
+      I.Sort{}     -> __IMPOSSIBLE__
+      I.MetaV{}    -> __IMPOSSIBLE__
+      I.DontCare{} -> __IMPOSSIBLE__
+
+      I.Lam{}      -> __IMPOSSIBLE__
+      I.Shared{}   -> __IMPOSSIBLE__
 
 
   extractArg canFTNo t (Common.Arg ai v) ret = do
@@ -555,7 +589,7 @@ instance ExtractTerm Term where
       FTEraseArg a -> ret a []
 
       FTNo -> case canFTNo of
-        False -> undefined  -- TODO
+        False -> __IMPOSSIBLE__
         True  -> do
           (e, _t) <- extractTermInfer v
           ret tUnknown [Coerce, F.Apply (Arg TermArg e)]
@@ -565,9 +599,7 @@ instance ExtractTerm Term where
       []                 -> return ([], t)
       (I.Proj{}  : _)    -> __IMPOSSIBLE__
       (I.Apply arg : es) -> do
-         let flag = True -- ?
-         extractArg flag t arg $ \ t0 es0 -> do
-          -- WAS: extractArg t arg $ \ t0 es0 -> do
+         extractArg True t arg $ \ t0 es0 -> do
            (es', t') <- extractElims t0 es
            return (es0 ++ es', t')
 
@@ -575,13 +607,14 @@ instance ExtractTerm Term where
     case args of
       []         -> return ([], t)
       (arg : as) ->
-         extractArg True t arg $ \ t0 es0 -> do --- WAS: extractArg t arg $ \..
+         extractArg False t arg $ \ t0 es0 -> do
          -- Constructor types are always function types, so
          -- no coercions possible.
             let as0 = map elimToArg es0
             (as', t') <- extractArgs t0 as
             return (as0 ++ as', t')
 
+elimToArg :: F.Elim a -> a
 elimToArg (F.Coerce{}) = __IMPOSSIBLE__
 elimToArg (F.Apply a)  = a
 
@@ -608,3 +641,29 @@ elimToArg (F.Apply a)  = a
 -}
 
 -- -}
+
+-- | Delete irrelevant domains from function types in the given type.
+--   As side effect, its checked whether the type contains an unknown
+--   part.
+class DeleteErasureMarkers a where
+  deleteErasureMarkers :: a -> Writer Any a
+
+instance (Traversable t, DeleteErasureMarkers a) => DeleteErasureMarkers (t a) where
+  deleteErasureMarkers = traverse deleteErasureMarkers
+
+instance DeleteErasureMarkers Type where
+  deleteErasureMarkers t = do
+    case typeView t of
+      TVar x gs        -> tVar x    <$> loop gs
+      TArrow a b
+        | TErased <- typeView a -> loop b
+        | otherwise             -> tArrow <$> loop a <*> loop b
+      TForall k f      -> tForall k <$> loop f
+      TCon d gs        -> tCon d    <$> loop gs
+      TLam b           -> tLam      <$> loop b
+      TUnknown         -> do
+        tell $ Any True
+        return t
+      TErased          -> __IMPOSSIBLE__
+    where
+      loop a = deleteErasureMarkers a
