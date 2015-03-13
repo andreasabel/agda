@@ -149,6 +149,7 @@ instance ExprRep Expr where
   fDef f (Elims es)      = I.Def f $ map repElim es
   fCon c (Args vs)       = I.Con c $ map repArg vs
   fCoerce v              = I.Level $ I.Max [I.Plus 0 $ I.UnreducedLevel v]
+  fDummy                 = I.DontCare $ I.Lit $ LitString empty "NotFomegaExpressions"
 
   exprView v =
     case ignoreSharing v of
@@ -158,7 +159,8 @@ instance ExprRep Expr where
       I.Def f es -> FDef f $ Elims $ map unrepElim es
       I.Con c vs -> FCon c $ Args $ map unrepArg vs
       I.Level (I.Max [I.Plus 0 (I.UnreducedLevel v)]) -> FCoerce v
-      _          -> __IMPOSSIBLE__
+      I.DontCare{} -> FDummy
+      _            -> __IMPOSSIBLE__
 
 
 -- * Conversion from Agda decorations to Fomega decorations

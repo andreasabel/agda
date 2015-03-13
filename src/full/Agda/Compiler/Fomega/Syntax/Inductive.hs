@@ -64,6 +64,8 @@ data Expr
   | FCoerce Expr
     -- ^ Type cast (used for expressions that are well-typed in Agda,
     --   but ill-typed in Fω).
+  | FDummy
+    -- ^ Dummy expression.
 
 -- | List of arguments.
 type Args = Args' Expr
@@ -121,6 +123,7 @@ instance ExprRep Expr where
       FDef d es -> F.FDef d es
       FCon c as -> F.FCon c as
       FCoerce e -> F.FCoerce e
+      FDummy    -> F.FDummy
 
   fVar      = FVar
   fLam      = FLam
@@ -128,3 +131,4 @@ instance ExprRep Expr where
   fDef      = FDef
   fCon      = FCon
   fCoerce   = FCoerce
+  fDummy    = FDummy

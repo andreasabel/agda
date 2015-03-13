@@ -5,6 +5,7 @@
 {-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE PatternGuards              #-}
 
 -- | Compile Agda to System Fω with data types and constructor.
 --
@@ -115,7 +116,9 @@ class TypeRep k a | a -> k where
   funTypeView t =
     let v = typeView t
     in case v of
-      TArrow a b  -> FTArrow a b
+      TArrow a b
+        | TErased <- typeView a -> FTEraseArg b
+        | otherwise             -> FTArrow a b
       TForall k f -> FTForall k f
       _           -> FTNo
 
@@ -153,6 +156,8 @@ data ExprView' a
   | FCoerce a
     -- ^ Type cast (used for expressions that are well-typed in Agda,
     --   but ill-typed in Fω).
+  | FDummy
+    -- ^ Dummy expression.
 
 -- | Term variables are de Bruijn indices.
 newtype Var = Var { theVar :: Int }
@@ -205,6 +210,9 @@ class ExprRep a where
   -- ^ Construct a constructor application.
   fCoerce :: a -> a
   -- ^ Construct a coerced expression.
+  fDummy :: a
+  -- ^ Construct a dummy expression
+  -- (e.g., when extracting something that is not a Fomega expression).
 
 
 ------------------------------------------------------------------------
